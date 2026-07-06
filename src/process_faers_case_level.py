@@ -18,14 +18,15 @@ side-effect signal is derived.
 Milestone status
 -----------------
   [x] Milestone 1 -- CLI skeleton, path wiring, placeholders
-  [x] Milestone 2 -- load raw DEMO/DRUG/REAC; raw-table diagnostics           (this file)
-  [ ] Milestone 3 -- resolve CASEID/CASEVERSION; filter to retained primaryids; dedupe reactions/drugs per case
-  [ ] Milestone 4 -- canonical (drug_i, drug_j) pair generation per case
-  [ ] Milestone 5 -- drug_pair_reaction_counts aggregation (PRR comes later, not in Milestone 5 either)
-  [ ] Milestone 6 -- validation checks (distinct CASEID counts, no duplicate caseids, etc.)
+  [x] Milestone 2 -- load raw DEMO/DRUG/REAC; raw-table diagnostics
+  [x] Milestone 3 -- resolve CASEID/CASEVERSION; filter to retained primaryids   (this file)
+  [ ] Milestone 4 -- dedupe reactions and drugs per case (case_reactions.parquet, case_drugs.parquet)
+  [ ] Milestone 5 -- canonical (drug_i, drug_j) pair generation per case
+  [ ] Milestone 6 -- drug_pair_reaction_counts aggregation (no PRR)
+  [ ] Milestone 7 -- global validation checks / PRR
 
-Milestone 2 scope (this file)
-------------------------------
+Milestone 2 scope
+------------------
 Loads DEMO, DRUG, and REAC as-is and reports raw-table diagnostics only:
   - no CASEID/CASEVERSION resolution
   - no drug-name mapping/normalization
@@ -34,6 +35,16 @@ Loads DEMO, DRUG, and REAC as-is and reports raw-table diagnostics only:
 `caseversion` is coerced to a nullable numeric column; rows that fail
 coercion are counted and flagged, not dropped, so the raw row count is
 never silently changed by this step.
+
+Milestone 3 scope (this file)
+------------------------------
+Resolves one retained PRIMARYID per CASEID (highest CASEVERSION, tie-broken
+by latest fda_dt then largest PRIMARYID) and filters raw DRUG/REAC down to
+rows whose PRIMARYID was retained. Still explicitly out of scope:
+  - reaction/drug deduplication within a case (Milestone 4)
+  - drug-name mapping/normalization (Milestone 4+)
+  - drug-pair generation (Milestone 5)
+  - PRR / disproportionality statistics (Milestone 7)
 
 This file does NOT:
   - implement full preprocessing
@@ -326,62 +337,302 @@ def save_raw_diagnostics(out_dir: str, diagnostics: dict) -> None:
 
 def resolve_case_versions(demo_df: pd.DataFrame) -> pd.DataFrame:
     """
-    TODO (Milestone 3): For each caseid, keep only the primaryid belonging to
-    the highest caseversion (the most recent amendment/resubmission),
-    producing the authoritative primaryid -> caseid mapping ("retained
-    primaryids") used to filter DRUG and REAC downstream.
+    Resolve one retained primaryid per caseid from CASEID/CASEVERSION.
+
+    Priority order (each column breaks ties left over from the previous one):
+      1. highest caseversion_numeric.
+         Missing/malformed caseversion is ranked -1 (lowest priority) via
+         fillna(-1), so a malformed-caseversion row is only ever retained
+         when it is the *only* row available for that caseid.
+      2. latest fda_dt, if the column exists. FAERS dates are usually
+         YYYYMMDD; partial dates and unparseable values are coerced to NaT
+         and ranked lowest (same "least priority, never crash" rule).
+      3. largest primaryid (numeric).
+
+    Rows with a missing caseid cannot be assigned to any case and are
+    excluded entirely -- counted here (and again in the diagnostics) rather
+    than silently dropped.
     """
-    print("  [TODO] resolve_case_versions() not yet implemented (Milestone 3)")
-    return pd.DataFrame(columns=["primaryid", "caseid"])
+    working = demo_df.copy()
+
+    missing_caseid_mask = _is_missing(working["caseid"])
+    n_missing_caseid = int(missing_caseid_mask.sum())
+    if n_missing_caseid:
+        print(f"  [WARN] DEMO: {n_missing_caseid:,} rows have missing caseid; excluded from case resolution")
+    working = working[~missing_caseid_mask].copy()
+
+    working["_caseversion_rank"] = working["caseversion_numeric"].fillna(-1)
+
+    if "fda_dt" in working.columns:
+        fda_dt_parsed = pd.to_datetime(working["fda_dt"], format="%Y%m%d", errors="coerce")
+        working["_fda_dt_rank"] = fda_dt_parsed.fillna(pd.Timestamp.min)
+    else:
+        working["_fda_dt_rank"] = 0  # no fda_dt available: tie-break falls through to primaryid
+
+    working["_primaryid_rank"] = pd.to_numeric(working["primaryid"], errors="coerce").fillna(-1)
+
+    working = working.sort_values(
+        by=["caseid", "_caseversion_rank", "_fda_dt_rank", "_primaryid_rank"],
+        ascending=[True, False, False, False],
+        kind="mergesort",  # stable -> deterministic winner on exact ties
+    )
+
+    n_versions = working.groupby("caseid").size().rename("n_versions_for_case")
+
+    retained = working.drop_duplicates(subset="caseid", keep="first").copy()
+    retained = retained.merge(n_versions, on="caseid", how="left")
+
+    out_cols = {
+        "caseid": retained["caseid"],
+        "retained_primaryid": retained["primaryid"],
+        "caseversion": retained["caseversion_numeric"],
+        "n_versions_for_case": retained["n_versions_for_case"],
+    }
+    if "fda_dt" in retained.columns:
+        out_cols["fda_dt"] = retained["fda_dt"]
+
+    retained_cases_df = pd.DataFrame(out_cols).reset_index(drop=True)
+
+    print(
+        f"  Resolved {len(retained_cases_df):,} retained cases from "
+        f"{len(working):,} usable DEMO rows ({n_missing_caseid:,} rows excluded for missing caseid)"
+    )
+    return retained_cases_df
 
 
 # ---------------------------------------------------------------------------
-# Milestone 3 (TODO) -- filter to retained PRIMARYIDs; dedupe reactions/drugs
+# Milestone 3 -- filter to retained PRIMARYIDs
 # ---------------------------------------------------------------------------
 
-def filter_to_retained_primaryids(df: pd.DataFrame, retained_primaryids) -> pd.DataFrame:
-    """TODO (Milestone 3): filter a DRUG or REAC dataframe down to retained primaryids only."""
-    print("  [TODO] filter_to_retained_primaryids() not yet implemented (Milestone 3)")
-    return df
+def filter_to_retained_primaryids(
+    df: pd.DataFrame,
+    retained_cases_df: pd.DataFrame,
+    table_name: str,
+) -> pd.DataFrame:
+    """
+    Filter a raw DRUG or REAC dataframe down to rows whose primaryid is a
+    retained_primaryid, attaching the *resolved* caseid via merge.
 
+    DRUG/REAC already carry their own raw caseid column, but it is dropped
+    before merging so the resolved caseid from retained_cases_df (the
+    authoritative one) doesn't collide with it as caseid_x/caseid_y.
+    """
+    retained_map = (
+        retained_cases_df[["retained_primaryid", "caseid"]]
+        .drop_duplicates()
+        .rename(columns={"retained_primaryid": "primaryid", "caseid": "caseid_resolved"})
+    )
+    before = len(df)
+    filtered = df.merge(retained_map, on="primaryid", how="inner")
+
+    # DRUG/REAC carry their own raw caseid. It should always agree with the
+    # DEMO-derived (authoritative) one -- log if it doesn't, since a
+    # mismatch would indicate a data-quality problem worth investigating,
+    # not something to silently paper over.
+    if "caseid" in filtered.columns:
+        raw_caseid = filtered["caseid"].astype(str).str.strip()
+        resolved_caseid = filtered["caseid_resolved"].astype(str).str.strip()
+        n_mismatched = int((raw_caseid != resolved_caseid).sum())
+        if n_mismatched:
+            print(
+                f"  [WARN] {table_name}: {n_mismatched:,} rows have a raw caseid that "
+                f"disagrees with the DEMO-derived caseid for the same primaryid "
+                f"(DEMO-derived caseid is authoritative and is what gets kept)"
+            )
+        filtered = filtered.drop(columns=["caseid"])
+
+    filtered = filtered.rename(columns={"caseid_resolved": "caseid"})
+
+    dropped = before - len(filtered)
+    print(f"  {table_name}: {len(filtered):,} / {before:,} rows retained ({dropped:,} dropped; primaryid not retained)")
+    return filtered
+
+
+def compute_case_resolution_diagnostics(
+    demo_df: pd.DataFrame,
+    retained_cases_df: pd.DataFrame,
+    drug_df: pd.DataFrame,
+    resolved_drug_df: pd.DataFrame,
+    reac_df: pd.DataFrame,
+    resolved_reac_df: pd.DataFrame,
+) -> dict:
+    """Compute the Milestone 3 diagnostics: case resolution + DRUG/REAC filtering counts."""
+    retained_primaryids = set(retained_cases_df["retained_primaryid"])
+
+    caseid_not_missing = ~_is_missing(demo_df["caseid"])
+    caseversion_bad = demo_df["caseversion_malformed"] | demo_df["caseversion_numeric"].isna()
+
+    return {
+        "n_demo_rows": int(len(demo_df)),
+        "n_unique_raw_caseid": int(demo_df.loc[caseid_not_missing, "caseid"].nunique()),
+        "n_unique_raw_primaryid": int(demo_df["primaryid"].nunique()),
+        "n_retained_cases": int(len(retained_cases_df)),
+        "n_retained_primaryids": int(retained_cases_df["retained_primaryid"].nunique()),
+        "n_cases_with_multiple_versions": int((retained_cases_df["n_versions_for_case"] > 1).sum()),
+        "max_versions_for_a_case": (
+            int(retained_cases_df["n_versions_for_case"].max()) if len(retained_cases_df) else None
+        ),
+        "n_demo_rows_dropped_missing_caseid": int((~caseid_not_missing).sum()),
+        "n_demo_rows_missing_or_malformed_caseversion": int(caseversion_bad.sum()),
+        "n_drug_rows_raw": int(len(drug_df)),
+        "n_drug_rows_resolved": int(len(resolved_drug_df)),
+        "n_reac_rows_raw": int(len(reac_df)),
+        "n_reac_rows_resolved": int(len(resolved_reac_df)),
+        "n_drug_primaryids_not_retained": int(len(set(drug_df["primaryid"].unique()) - retained_primaryids)),
+        "n_reac_primaryids_not_retained": int(len(set(reac_df["primaryid"].unique()) - retained_primaryids)),
+    }
+
+
+def print_case_resolution_diagnostics(diagnostics: dict) -> None:
+    d = diagnostics
+    print("\n  Case resolution diagnostics:")
+    print(f"    raw DEMO rows:                          {d['n_demo_rows']:,}")
+    print(f"    unique raw caseid:                      {d['n_unique_raw_caseid']:,}")
+    print(f"    unique raw primaryid:                   {d['n_unique_raw_primaryid']:,}")
+    print(f"    retained cases:                         {d['n_retained_cases']:,}")
+    print(f"    retained primaryids:                    {d['n_retained_primaryids']:,}")
+    print(f"    cases with >1 version:                  {d['n_cases_with_multiple_versions']:,}")
+    print(f"    max versions for a single case:          {d['max_versions_for_a_case']}")
+    print(f"    DEMO rows dropped (missing caseid):      {d['n_demo_rows_dropped_missing_caseid']:,}")
+    print(f"    DEMO rows missing/malformed caseversion: {d['n_demo_rows_missing_or_malformed_caseversion']:,}")
+    print(f"    raw DRUG rows:                           {d['n_drug_rows_raw']:,}")
+    print(f"    resolved DRUG rows:                      {d['n_drug_rows_resolved']:,}")
+    print(f"    raw REAC rows:                           {d['n_reac_rows_raw']:,}")
+    print(f"    resolved REAC rows:                      {d['n_reac_rows_resolved']:,}")
+    print(f"    DRUG primaryids not retained:            {d['n_drug_primaryids_not_retained']:,}")
+    print(f"    REAC primaryids not retained:            {d['n_reac_primaryids_not_retained']:,}")
+
+
+def run_case_resolution_validation(
+    demo_df: pd.DataFrame,
+    retained_cases_df: pd.DataFrame,
+    resolved_drug_df: pd.DataFrame,
+    resolved_reac_df: pd.DataFrame,
+) -> None:
+    """
+    Validate the Milestone 3 case resolution and PRIMARYID filtering.
+
+    Raises AssertionError listing every failed check rather than warning --
+    a resolution bug here (e.g. a duplicated caseid, or a drug/reaction row
+    that leaked in from a non-retained primaryid) would silently corrupt
+    every later milestone, so these checks fail loudly instead.
+    """
+    failures = []
+
+    if retained_cases_df["caseid"].duplicated().any():
+        failures.append("retained_cases.caseid is not unique")
+
+    if retained_cases_df["retained_primaryid"].isna().any():
+        failures.append("retained_cases.retained_primaryid has null values")
+
+    retained_primaryids = set(retained_cases_df["retained_primaryid"])
+    if not set(resolved_drug_df["primaryid"]).issubset(retained_primaryids):
+        failures.append("resolved_drug_rows contains a primaryid outside the retained set")
+    if not set(resolved_reac_df["primaryid"]).issubset(retained_primaryids):
+        failures.append("resolved_reac_rows contains a primaryid outside the retained set")
+
+    if resolved_drug_df["caseid"].isna().any():
+        failures.append("resolved_drug_rows has rows with null caseid")
+    if resolved_reac_df["caseid"].isna().any():
+        failures.append("resolved_reac_rows has rows with null caseid")
+
+    # Retained caseversion should equal the max *valid* (non-malformed,
+    # non-missing) caseversion for that case -- unless every version for
+    # that case was missing/malformed, in which case there is no valid
+    # value to compare against and the check is skipped for that case.
+    valid_demo = demo_df[~demo_df["caseversion_malformed"] & demo_df["caseversion_numeric"].notna()]
+    max_valid_by_case = valid_demo.groupby("caseid")["caseversion_numeric"].max()
+    check_df = retained_cases_df.merge(
+        max_valid_by_case.rename("max_valid_caseversion"), on="caseid", how="left"
+    )
+    has_valid_version = check_df["max_valid_caseversion"].notna()
+    mismatched = has_valid_version & (check_df["caseversion"] != check_df["max_valid_caseversion"])
+    if mismatched.any():
+        failures.append(
+            f"{int(mismatched.sum()):,} retained cases have caseversion != max valid caseversion for that case"
+        )
+
+    if failures:
+        raise AssertionError("Milestone 3 validation failed:\n  - " + "\n  - ".join(failures))
+
+    print("  All Milestone 3 validation checks passed:")
+    print("    - retained_cases.caseid is unique")
+    print("    - retained_cases.retained_primaryid has no nulls")
+    print("    - resolved_drug_rows.primaryid subset of retained primaryids")
+    print("    - resolved_reac_rows.primaryid subset of retained primaryids")
+    print("    - resolved_drug_rows.caseid has no nulls")
+    print("    - resolved_reac_rows.caseid has no nulls")
+    print("    - retained caseversion == max valid caseversion per case (where one exists)")
+
+
+def save_case_resolution_artifacts(
+    out_dir: str,
+    retained_cases_df: pd.DataFrame,
+    resolved_drug_df: pd.DataFrame,
+    resolved_reac_df: pd.DataFrame,
+    diagnostics: dict,
+) -> None:
+    retained_path = os.path.join(out_dir, "retained_cases.parquet")
+    retained_cases_df.to_parquet(retained_path, index=False)
+    print(f"  Saved: {retained_path}  ({len(retained_cases_df):,} rows)")
+
+    drug_path = os.path.join(out_dir, "resolved_drug_rows.parquet")
+    resolved_drug_df.to_parquet(drug_path, index=False)
+    print(f"  Saved: {drug_path}  ({len(resolved_drug_df):,} rows)")
+
+    reac_path = os.path.join(out_dir, "resolved_reac_rows.parquet")
+    resolved_reac_df.to_parquet(reac_path, index=False)
+    print(f"  Saved: {reac_path}  ({len(resolved_reac_df):,} rows)")
+
+    diagnostics_path = os.path.join(out_dir, "case_resolution_diagnostics.json")
+    with open(diagnostics_path, "w", encoding="utf-8") as f:
+        json.dump(diagnostics, f, indent=2)
+    print(f"  Saved: {diagnostics_path}")
+
+
+# ---------------------------------------------------------------------------
+# Milestone 4 (TODO) -- dedupe reactions and drugs per case
+# ---------------------------------------------------------------------------
 
 def build_case_reactions(reac_df: pd.DataFrame, case_map_df: pd.DataFrame) -> pd.DataFrame:
     """
-    TODO (Milestone 3): Join filtered REAC with the primaryid->caseid map and
-    drop duplicate (caseid, pt) rows so each case reports a given reaction once.
+    TODO (Milestone 4): Given resolved_reac_rows (already filtered to
+    retained primaryids and carrying caseid), drop duplicate (caseid, pt)
+    rows so each case reports a given reaction once.
     Output columns: caseid, pt.  Saved later as case_reactions.parquet.
     """
-    print("  [TODO] build_case_reactions() not yet implemented (Milestone 3)")
+    print("  [TODO] build_case_reactions() not yet implemented (Milestone 4)")
     return pd.DataFrame(columns=["caseid", "pt"])
 
 
 def build_case_drugs(drug_df: pd.DataFrame, case_map_df: pd.DataFrame) -> pd.DataFrame:
     """
-    TODO (Milestone 3): Join filtered DRUG with the primaryid->caseid map,
-    normalize drug names (normalize_drug_string), and drop duplicate
-    (caseid, normalized_drug) rows, merging role_cod where needed.
+    TODO (Milestone 4): Given resolved_drug_rows (already filtered to
+    retained primaryids and carrying caseid), normalize drug names
+    (normalize_drug_string) and drop duplicate (caseid, normalized_drug)
+    rows, merging role_cod where needed.
     Output columns: caseid, drug, role_cod.  Saved later as case_drugs.parquet.
     """
-    print("  [TODO] build_case_drugs() not yet implemented (Milestone 3)")
+    print("  [TODO] build_case_drugs() not yet implemented (Milestone 4)")
     return pd.DataFrame(columns=["caseid", "drug", "role_cod"])
 
 
 # ---------------------------------------------------------------------------
-# Milestone 4 (TODO) -- canonical drug-pair generation per case
+# Milestone 5 (TODO) -- canonical drug-pair generation per case
 # ---------------------------------------------------------------------------
 
 def build_case_drug_pairs(case_drugs_df: pd.DataFrame) -> pd.DataFrame:
     """
-    TODO (Milestone 4): Per case, enumerate canonical (drug_i, drug_j) pairs
+    TODO (Milestone 5): Per case, enumerate canonical (drug_i, drug_j) pairs
     with drug_i < drug_j (no self-pairs, no direction duplicates).
     Output columns: caseid, drug_i, drug_j.  Saved later as case_drug_pairs.parquet.
     """
-    print("  [TODO] build_case_drug_pairs() not yet implemented (Milestone 4)")
+    print("  [TODO] build_case_drug_pairs() not yet implemented (Milestone 5)")
     return pd.DataFrame(columns=["caseid", "drug_i", "drug_j"])
 
 
 # ---------------------------------------------------------------------------
-# Milestone 5 (TODO) -- drug_pair_reaction_counts aggregation (no PRR yet)
+# Milestone 6 (TODO) -- drug_pair_reaction_counts aggregation (no PRR yet)
 # ---------------------------------------------------------------------------
 
 def build_drug_pair_reaction_counts(
@@ -389,18 +640,18 @@ def build_drug_pair_reaction_counts(
     case_reactions_df: pd.DataFrame,
 ) -> pd.DataFrame:
     """
-    TODO (Milestone 5): Join case_drug_pairs with case_reactions on caseid and
+    TODO (Milestone 6): Join case_drug_pairs with case_reactions on caseid and
     count distinct cases per (drug_i, drug_j, pt). This is a count table only;
     PRR / disproportionality statistics are explicitly out of scope here.
     Output columns: drug_i, drug_j, pt, n_cases.
     Saved later as drug_pair_reaction_counts.parquet.
     """
-    print("  [TODO] build_drug_pair_reaction_counts() not yet implemented (Milestone 5)")
+    print("  [TODO] build_drug_pair_reaction_counts() not yet implemented (Milestone 6)")
     return pd.DataFrame(columns=["drug_i", "drug_j", "pt", "n_cases"])
 
 
 # ---------------------------------------------------------------------------
-# Milestone 6 (TODO) -- validation checks
+# Milestone 7 (TODO) -- global validation checks / PRR
 # ---------------------------------------------------------------------------
 
 def run_validation_checks(
@@ -410,13 +661,13 @@ def run_validation_checks(
     case_drugs_df: pd.DataFrame,
 ) -> None:
     """
-    TODO (Milestone 6): Sanity checks, e.g.:
+    TODO (Milestone 7): Sanity checks, e.g.:
       - distinct caseid count in case_map_df matches distinct caseid in DEMO
       - no primaryid appears under two different caseids
       - no case has zero reactions or zero drugs after filtering
       - case_drug_pairs has no (drug_i == drug_j) rows and no reversed duplicates
     """
-    print("  [TODO] run_validation_checks() not yet implemented (Milestone 6)")
+    print("  [TODO] run_validation_checks() not yet implemented (Milestone 7)")
 
 
 # ---------------------------------------------------------------------------
@@ -446,9 +697,9 @@ def main() -> None:
         description=(
             "Corrected case-level FAERS preprocessing pipeline (NEW). "
             "Resolves CASEID/CASEVERSION so each real-world case is counted "
-            "once, ahead of drug-only R-GCN construction. Milestone 2: loads "
-            "raw DEMO/DRUG/REAC and reports raw-table diagnostics only -- "
-            "see file docstring for milestone status."
+            "once, ahead of drug-only R-GCN construction. Milestone 3: "
+            "resolves CASEID/CASEVERSION and filters DRUG/REAC to retained "
+            "PRIMARYIDs -- see file docstring for milestone status."
         )
     )
     input_group = parser.add_mutually_exclusive_group()
@@ -529,19 +780,39 @@ def main() -> None:
     save_raw_tables(args.out_dir, demo_df, drug_df, reac_df)
     save_raw_diagnostics(args.out_dir, diagnostics)
 
-    print("\n--- Milestone 3 (pending): resolve CASEID/CASEVERSION; filter to retained PRIMARYIDs; dedupe reactions/drugs ---")
-    case_map_df = resolve_case_versions(demo_df)
-    case_reactions_df = build_case_reactions(reac_df, case_map_df)
-    case_drugs_df = build_case_drugs(drug_df, case_map_df)
+    print("\n--- Milestone 3: resolve CASEID/CASEVERSION ---")
+    retained_cases_df = resolve_case_versions(demo_df)
 
-    print("\n--- Milestone 4 (pending): canonical drug-pair generation ---")
+    print("\n--- Milestone 3: filter DRUG/REAC to retained PRIMARYIDs ---")
+    resolved_drug_df = filter_to_retained_primaryids(drug_df, retained_cases_df, "DRUG")
+    resolved_reac_df = filter_to_retained_primaryids(reac_df, retained_cases_df, "REAC")
+
+    print("\n--- Milestone 3: case-resolution diagnostics ---")
+    case_resolution_diagnostics = compute_case_resolution_diagnostics(
+        demo_df, retained_cases_df, drug_df, resolved_drug_df, reac_df, resolved_reac_df,
+    )
+    print_case_resolution_diagnostics(case_resolution_diagnostics)
+
+    print("\n--- Milestone 3: validation checks ---")
+    run_case_resolution_validation(demo_df, retained_cases_df, resolved_drug_df, resolved_reac_df)
+
+    print("\n--- Milestone 3: saving case-resolution artifacts ---")
+    save_case_resolution_artifacts(
+        args.out_dir, retained_cases_df, resolved_drug_df, resolved_reac_df, case_resolution_diagnostics,
+    )
+
+    print("\n--- Milestone 4 (pending): dedupe reactions and drugs per case ---")
+    case_reactions_df = build_case_reactions(resolved_reac_df, retained_cases_df)
+    case_drugs_df = build_case_drugs(resolved_drug_df, retained_cases_df)
+
+    print("\n--- Milestone 5 (pending): canonical drug-pair generation ---")
     case_drug_pairs_df = build_case_drug_pairs(case_drugs_df)
 
-    print("\n--- Milestone 5 (pending): drug_pair_reaction_counts aggregation ---")
+    print("\n--- Milestone 6 (pending): drug_pair_reaction_counts aggregation ---")
     drug_pair_reaction_counts_df = build_drug_pair_reaction_counts(case_drug_pairs_df, case_reactions_df)
 
-    print("\n--- Milestone 6 (pending): validation checks ---")
-    run_validation_checks(demo_df, case_map_df, case_reactions_df, case_drugs_df)
+    print("\n--- Milestone 7 (pending): global validation checks ---")
+    run_validation_checks(demo_df, retained_cases_df, case_reactions_df, case_drugs_df)
 
     print("\n--- Save (pending): case-level artifacts ---")
     save_case_level_artifacts(
@@ -550,11 +821,12 @@ def main() -> None:
     )
 
     print("\n" + "=" * 60)
-    print("Milestone 2 complete: raw DEMO/DRUG/REAC loaded and diagnosed.")
-    print("No CASEID/CASEVERSION resolution, drug mapping, deduplication, or")
-    print("drug-pair generation was performed yet.")
-    print(f"Raw artifacts in: {args.out_dir}")
-    print("Next: implement Milestone 3 (resolve CASEID/CASEVERSION; dedupe).")
+    print("Milestone 3 complete: CASEID/CASEVERSION resolved; DRUG/REAC")
+    print("filtered to retained PRIMARYIDs.")
+    print("No reaction/drug deduplication, drug mapping, or drug-pair")
+    print("generation was performed yet.")
+    print(f"Artifacts in: {args.out_dir}")
+    print("Next: implement Milestone 4 (dedupe reactions and drugs per case).")
     print("=" * 60)
 
 
