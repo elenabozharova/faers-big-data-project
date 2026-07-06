@@ -74,3 +74,6 @@ FAERS_ZIP_PATH   = os.environ.get(
 )
 FAERS_DRUG_INNER = os.environ.get("FAERS_DRUG_FILE", "ASCII/DRUG25Q4.txt")
 FAERS_REAC_INNER = os.environ.get("FAERS_REAC_FILE", "ASCII/REAC25Q4.txt")
+# DEMO carries caseid/caseversion, needed by process_faers_case_level.py to
+# resolve one row per real-world case (see Milestone 2 of that pipeline).
+FAERS_DEMO_INNER = os.environ.get("FAERS_DEMO_FILE", "ASCII/DEMO25Q4.txt")
