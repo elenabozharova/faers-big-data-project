@@ -19,8 +19,9 @@ Milestone status
 -----------------
   [x] Milestone 1 -- CLI skeleton, path wiring, placeholders
   [x] Milestone 2 -- load raw DEMO/DRUG/REAC; raw-table diagnostics
-  [x] Milestone 3 -- resolve CASEID/CASEVERSION; filter to retained primaryids   (this file)
-  [ ] Milestone 4 -- dedupe reactions and drugs per case (case_reactions.parquet, case_drugs.parquet)
+  [x] Milestone 3 -- resolve CASEID/CASEVERSION; filter to retained primaryids
+  [x] Milestone 4 -- dedupe reactions per case (case_reactions.parquet)          (this file)
+  [ ] Milestone 4b -- dedupe drugs per case (case_drugs.parquet)
   [ ] Milestone 5 -- canonical (drug_i, drug_j) pair generation per case
   [ ] Milestone 6 -- drug_pair_reaction_counts aggregation (no PRR)
   [ ] Milestone 7 -- global validation checks / PRR
@@ -36,13 +37,24 @@ Loads DEMO, DRUG, and REAC as-is and reports raw-table diagnostics only:
 coercion are counted and flagged, not dropped, so the raw row count is
 never silently changed by this step.
 
-Milestone 3 scope (this file)
-------------------------------
+Milestone 3 scope
+------------------
 Resolves one retained PRIMARYID per CASEID (highest CASEVERSION, tie-broken
 by latest fda_dt then largest PRIMARYID) and filters raw DRUG/REAC down to
 rows whose PRIMARYID was retained. Still explicitly out of scope:
   - reaction/drug deduplication within a case (Milestone 4)
-  - drug-name mapping/normalization (Milestone 4+)
+  - drug-name mapping/normalization (Milestone 4b+)
+  - drug-pair generation (Milestone 5)
+  - PRR / disproportionality statistics (Milestone 7)
+
+Milestone 4 scope (this file)
+------------------------------
+Builds case_reactions.parquet: one row per (caseid, reaction_pt). Reuses
+process_faers._SE_EXCLUDE (administrative/non-clinical PT strings) read-only,
+purely for PT filtering -- no old row/primaryid-counting logic is reused.
+Still explicitly out of scope:
+  - drug deduplication within a case (Milestone 4b)
+  - drug-name mapping/normalization (Milestone 4b+)
   - drug-pair generation (Milestone 5)
   - PRR / disproportionality statistics (Milestone 7)
 
@@ -80,9 +92,17 @@ if _SRC_DIR not in sys.path:
 
 import config as _cfg  # noqa: E402
 
-# Reused as-is (read-only helpers; not modified, not copied):
+# Reused as-is (read-only helpers/constants; not modified, not copied):
 from process_faers import load_faers_table  # noqa: E402  -- used in Milestone 2
-from normalize_drug_names import normalize_drug_string  # noqa: E402  -- used in Milestone 3/4
+from normalize_drug_names import normalize_drug_string  # noqa: E402  -- used in Milestone 4b+
+
+try:
+    # Administrative/non-clinical MedDRA PT strings (plain frozenset of
+    # data, no row/primaryid-counting logic). Used only to filter reaction
+    # PTs in build_case_reactions(); process_faers.py itself is untouched.
+    from process_faers import _SE_EXCLUDE  # noqa: E402
+except ImportError:
+    _SE_EXCLUDE = None  # exclusion list unavailable -- Milestone 4 will skip this filter and say so
 
 DEFAULT_OUT_DIR = os.path.join(DATA_PROCESSED, "faers_case_level")
 DEFAULT_MAPPING_FILE = os.path.join(DATA_PROCESSED, "faers", "faers_drug_to_chembl.parquet")
@@ -591,29 +611,181 @@ def save_case_resolution_artifacts(
 
 
 # ---------------------------------------------------------------------------
-# Milestone 4 (TODO) -- dedupe reactions and drugs per case
+# Milestone 4 -- dedupe reactions per case (case_reactions.parquet)
 # ---------------------------------------------------------------------------
 
-def build_case_reactions(reac_df: pd.DataFrame, case_map_df: pd.DataFrame) -> pd.DataFrame:
+def build_case_reactions(resolved_reac_df: pd.DataFrame) -> tuple:
     """
-    TODO (Milestone 4): Given resolved_reac_rows (already filtered to
-    retained primaryids and carrying caseid), drop duplicate (caseid, pt)
-    rows so each case reports a given reaction once.
-    Output columns: caseid, pt.  Saved later as case_reactions.parquet.
-    """
-    print("  [TODO] build_case_reactions() not yet implemented (Milestone 4)")
-    return pd.DataFrame(columns=["caseid", "pt"])
+    Build the case-level adverse-event table from resolved_reac_rows (which
+    already carries the authoritative, DEMO-derived caseid).
 
+    Steps:
+      1. Normalize pt -> reaction_pt: lowercase, strip, collapse repeated
+         internal whitespace; empty strings become missing.
+      2. Drop rows with missing caseid or missing/blank reaction_pt.
+      3. Optionally drop administrative/non-clinical PTs using
+         process_faers._SE_EXCLUDE (reused read-only, PT filtering only --
+         no row/primaryid-counting logic from the old pipeline is reused).
+      4. Deduplicate to one row per (caseid, reaction_pt) -- a case
+         contributes a given MedDRA PT at most once. source_primaryid keeps
+         whichever primaryid sorts first within the case for provenance
+         only; it has no bearing on which reaction_pt values survive.
+
+    Returns (case_reactions_df, diagnostics_dict).
+    """
+    _require_columns(resolved_reac_df, ["caseid", "primaryid", "pt"], "resolved_reac_rows")
+
+    n_input_rows = len(resolved_reac_df)
+    working = resolved_reac_df.copy()
+
+    # Step 1: normalize pt -> reaction_pt
+    normalized = (
+        working["pt"].fillna("").astype(str).str.strip().str.lower()
+        .str.replace(r"\s+", " ", regex=True)
+    )
+    working["reaction_pt"] = normalized.replace("", pd.NA)
+
+    # Step 2: drop missing caseid / missing reaction_pt
+    missing_caseid_mask = _is_missing(working["caseid"])
+    n_missing_caseid = int(missing_caseid_mask.sum())
+
+    missing_pt_mask = working["reaction_pt"].isna()
+    n_missing_pt = int(missing_pt_mask.sum())
+
+    working = working[~missing_caseid_mask & ~missing_pt_mask].copy()
+
+    # Step 3: optional administrative/non-clinical PT exclusion
+    exclusion_reused = _SE_EXCLUDE is not None
+    n_excluded = 0
+    if exclusion_reused:
+        excluded_mask = working["reaction_pt"].isin(_SE_EXCLUDE)
+        n_excluded = int(excluded_mask.sum())
+        print(
+            f"  Reused process_faers._SE_EXCLUDE ({len(_SE_EXCLUDE)} PTs, PT filtering only): "
+            f"removed {n_excluded:,} administrative/non-clinical rows"
+        )
+        working = working[~excluded_mask].copy()
+    else:
+        print(
+            "  [TODO] process_faers._SE_EXCLUDE unavailable -- no administrative/non-clinical "
+            "PT exclusion list applied (not inventing a new one)"
+        )
+
+    n_before_dedup = len(working)
+
+    # Step 4: one row per (caseid, reaction_pt)
+    working = working.sort_values(["caseid", "reaction_pt", "primaryid"], kind="mergesort")
+    deduped = working.drop_duplicates(subset=["caseid", "reaction_pt"], keep="first")
+
+    case_reactions_df = (
+        deduped.rename(columns={"primaryid": "source_primaryid", "pt": "pt_original"})
+        [["caseid", "reaction_pt", "source_primaryid", "pt_original"]]
+        .reset_index(drop=True)
+    )
+
+    n_after_dedup = len(case_reactions_df)
+
+    diagnostics = {
+        "n_input_rows": n_input_rows,
+        "n_missing_caseid": n_missing_caseid,
+        "n_missing_or_blank_pt": n_missing_pt,
+        "exclusion_list_reused": exclusion_reused,
+        "n_removed_by_exclusion_list": n_excluded,
+        "n_rows_before_dedup": n_before_dedup,
+        "n_rows_after_dedup": n_after_dedup,
+        "n_duplicate_rows_removed": n_before_dedup - n_after_dedup,
+        "n_unique_cases_with_reactions": int(case_reactions_df["caseid"].nunique()),
+        "n_unique_reaction_pt": int(case_reactions_df["reaction_pt"].nunique()),
+        "top_20_reaction_pt": {
+            str(k): int(v) for k, v in case_reactions_df["reaction_pt"].value_counts().head(20).items()
+        },
+    }
+
+    print(
+        f"  case_reactions: {n_after_dedup:,} rows "
+        f"({diagnostics['n_unique_cases_with_reactions']:,} cases, "
+        f"{diagnostics['n_unique_reaction_pt']:,} unique reaction_pt)"
+    )
+
+    return case_reactions_df, diagnostics
+
+
+def print_reaction_dedup_diagnostics(diagnostics: dict) -> None:
+    d = diagnostics
+    print("\n  Reaction dedup diagnostics:")
+    print(f"    input resolved REAC rows:       {d['n_input_rows']:,}")
+    print(f"    rows with missing caseid:       {d['n_missing_caseid']:,}")
+    print(f"    rows missing/blank PT:          {d['n_missing_or_blank_pt']:,}")
+    print(f"    exclusion list reused:          {d['exclusion_list_reused']}")
+    print(f"    rows removed by exclusion list: {d['n_removed_by_exclusion_list']:,}")
+    print(f"    rows before dedup:              {d['n_rows_before_dedup']:,}")
+    print(f"    rows after dedup:               {d['n_rows_after_dedup']:,}")
+    print(f"    duplicate rows removed:         {d['n_duplicate_rows_removed']:,}")
+    print(f"    unique cases with reactions:    {d['n_unique_cases_with_reactions']:,}")
+    print(f"    unique reaction_pt:             {d['n_unique_reaction_pt']:,}")
+    print("    top 20 reaction_pt:")
+    for k, v in d["top_20_reaction_pt"].items():
+        print(f"      {k:<40} {v:,}")
+
+
+def run_case_reactions_validation(resolved_reac_df: pd.DataFrame, case_reactions_df: pd.DataFrame) -> None:
+    """
+    Validate case_reactions. Raises AssertionError listing every failed
+    check -- a bug here would silently corrupt drug-pair/reaction counting
+    in later milestones, so it fails loudly instead of warning.
+    """
+    failures = []
+
+    required_cols = ["caseid", "reaction_pt", "source_primaryid"]
+    missing_cols = [c for c in required_cols if c not in case_reactions_df.columns]
+    if missing_cols:
+        failures.append(f"case_reactions is missing required column(s): {missing_cols}")
+    else:
+        if case_reactions_df["caseid"].isna().any():
+            failures.append("case_reactions has rows with null caseid")
+        if case_reactions_df["reaction_pt"].isna().any():
+            failures.append("case_reactions has rows with null reaction_pt")
+        if case_reactions_df.duplicated(subset=["caseid", "reaction_pt"]).any():
+            failures.append("case_reactions has duplicate (caseid, reaction_pt) rows")
+        valid_caseids = set(resolved_reac_df["caseid"])
+        if not set(case_reactions_df["caseid"]).issubset(valid_caseids):
+            failures.append("case_reactions contains a caseid not present in resolved_reac_rows")
+
+    if failures:
+        raise AssertionError("Milestone 4 (case_reactions) validation failed:\n  - " + "\n  - ".join(failures))
+
+    print("  All Milestone 4 (case_reactions) validation checks passed:")
+    print("    - case_reactions has required columns")
+    print("    - no missing caseid")
+    print("    - no missing reaction_pt")
+    print("    - no duplicate (caseid, reaction_pt)")
+    print("    - every case_reactions.caseid present in resolved_reac_rows")
+
+
+def save_case_reactions_artifacts(out_dir: str, case_reactions_df: pd.DataFrame, diagnostics: dict) -> None:
+    path = os.path.join(out_dir, "case_reactions.parquet")
+    case_reactions_df.to_parquet(path, index=False)
+    print(f"  Saved: {path}  ({len(case_reactions_df):,} rows)")
+
+    diagnostics_path = os.path.join(out_dir, "reaction_dedup_diagnostics.json")
+    with open(diagnostics_path, "w", encoding="utf-8") as f:
+        json.dump(diagnostics, f, indent=2)
+    print(f"  Saved: {diagnostics_path}")
+
+
+# ---------------------------------------------------------------------------
+# Milestone 4b (TODO) -- dedupe drugs per case
+# ---------------------------------------------------------------------------
 
 def build_case_drugs(drug_df: pd.DataFrame, case_map_df: pd.DataFrame) -> pd.DataFrame:
     """
-    TODO (Milestone 4): Given resolved_drug_rows (already filtered to
+    TODO (Milestone 4b): Given resolved_drug_rows (already filtered to
     retained primaryids and carrying caseid), normalize drug names
     (normalize_drug_string) and drop duplicate (caseid, normalized_drug)
     rows, merging role_cod where needed.
     Output columns: caseid, drug, role_cod.  Saved later as case_drugs.parquet.
     """
-    print("  [TODO] build_case_drugs() not yet implemented (Milestone 4)")
+    print("  [TODO] build_case_drugs() not yet implemented (Milestone 4b)")
     return pd.DataFrame(columns=["caseid", "drug", "role_cod"])
 
 
@@ -697,9 +869,9 @@ def main() -> None:
         description=(
             "Corrected case-level FAERS preprocessing pipeline (NEW). "
             "Resolves CASEID/CASEVERSION so each real-world case is counted "
-            "once, ahead of drug-only R-GCN construction. Milestone 3: "
-            "resolves CASEID/CASEVERSION and filters DRUG/REAC to retained "
-            "PRIMARYIDs -- see file docstring for milestone status."
+            "once, ahead of drug-only R-GCN construction. Milestone 4: "
+            "builds case_reactions.parquet (one row per caseid, reaction_pt) "
+            "-- see file docstring for milestone status."
         )
     )
     input_group = parser.add_mutually_exclusive_group()
@@ -801,8 +973,17 @@ def main() -> None:
         args.out_dir, retained_cases_df, resolved_drug_df, resolved_reac_df, case_resolution_diagnostics,
     )
 
-    print("\n--- Milestone 4 (pending): dedupe reactions and drugs per case ---")
-    case_reactions_df = build_case_reactions(resolved_reac_df, retained_cases_df)
+    print("\n--- Milestone 4: build case_reactions ---")
+    case_reactions_df, reaction_dedup_diagnostics = build_case_reactions(resolved_reac_df)
+    print_reaction_dedup_diagnostics(reaction_dedup_diagnostics)
+
+    print("\n--- Milestone 4: case_reactions validation checks ---")
+    run_case_reactions_validation(resolved_reac_df, case_reactions_df)
+
+    print("\n--- Milestone 4: saving case_reactions artifacts ---")
+    save_case_reactions_artifacts(args.out_dir, case_reactions_df, reaction_dedup_diagnostics)
+
+    print("\n--- Milestone 4b (pending): dedupe drugs per case ---")
     case_drugs_df = build_case_drugs(resolved_drug_df, retained_cases_df)
 
     print("\n--- Milestone 5 (pending): canonical drug-pair generation ---")
@@ -821,12 +1002,12 @@ def main() -> None:
     )
 
     print("\n" + "=" * 60)
-    print("Milestone 3 complete: CASEID/CASEVERSION resolved; DRUG/REAC")
-    print("filtered to retained PRIMARYIDs.")
-    print("No reaction/drug deduplication, drug mapping, or drug-pair")
-    print("generation was performed yet.")
+    print("Milestone 4 complete: case_reactions.parquet built (one row per")
+    print("caseid, reaction_pt).")
+    print("No drug deduplication, drug mapping, or drug-pair generation")
+    print("was performed yet.")
     print(f"Artifacts in: {args.out_dir}")
-    print("Next: implement Milestone 4 (dedupe reactions and drugs per case).")
+    print("Next: implement Milestone 4b (dedupe drugs per case).")
     print("=" * 60)
 
 
