@@ -17,12 +17,23 @@ side-effect signal is derived.
 
 Milestone status
 -----------------
-  [x] Milestone 1 -- CLI skeleton, path wiring, placeholders        (this file)
-  [ ] Milestone 2 -- load DEMO/DRUG/REAC; resolve CASEID/CASEVERSION
-  [ ] Milestone 3 -- filter DRUG/REAC to retained primaryids; dedupe reactions and drugs per case
+  [x] Milestone 1 -- CLI skeleton, path wiring, placeholders
+  [x] Milestone 2 -- load raw DEMO/DRUG/REAC; raw-table diagnostics           (this file)
+  [ ] Milestone 3 -- resolve CASEID/CASEVERSION; filter to retained primaryids; dedupe reactions/drugs per case
   [ ] Milestone 4 -- canonical (drug_i, drug_j) pair generation per case
   [ ] Milestone 5 -- drug_pair_reaction_counts aggregation (PRR comes later, not in Milestone 5 either)
   [ ] Milestone 6 -- validation checks (distinct CASEID counts, no duplicate caseids, etc.)
+
+Milestone 2 scope (this file)
+------------------------------
+Loads DEMO, DRUG, and REAC as-is and reports raw-table diagnostics only:
+  - no CASEID/CASEVERSION resolution
+  - no drug-name mapping/normalization
+  - no reaction deduplication
+  - no drug-pair generation
+`caseversion` is coerced to a nullable numeric column; rows that fail
+coercion are counted and flagged, not dropped, so the raw row count is
+never silently changed by this step.
 
 This file does NOT:
   - implement full preprocessing
@@ -38,6 +49,7 @@ Usage
 """
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -72,29 +84,254 @@ def _infer_quarter_from_zip(zip_path: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Milestone 2 (TODO) -- load DEMO / DRUG / REAC and resolve CASEID/CASEVERSION
+# Milestone 2 -- load raw DEMO / DRUG / REAC and report raw-table diagnostics
 # ---------------------------------------------------------------------------
 
-def load_demo_table(zip_path: str, inner_path: str, max_rows: int = None) -> pd.DataFrame:
+def _load_raw_faers_table(
+    faers_zip: str,
+    faers_dir: str,
+    inner_path: str,
+    max_rows: int = None,
+) -> pd.DataFrame:
     """
-    TODO (Milestone 2): Load the FAERS DEMO table.
+    Load a dollar-delimited FAERS ASCII table from either an extracted
+    directory (--faers-dir) or a quarterly zip (--faers-zip).
 
-    Expected to return at least: primaryid, caseid, caseversion.
-    Can reuse process_faers.load_faers_table(zip_path, inner_path, max_rows)
-    directly since it is a generic dollar-delimited FAERS table loader.
+    Zip mode reuses process_faers.load_faers_table() unmodified. Directory
+    mode is new (the old pipeline never reads from an extracted directory).
     """
-    print("  [TODO] load_demo_table() not yet implemented (Milestone 2)")
-    return pd.DataFrame(columns=["primaryid", "caseid", "caseversion"])
+    if faers_dir:
+        candidates = [
+            os.path.join(faers_dir, inner_path),
+            os.path.join(faers_dir, os.path.basename(inner_path)),
+        ]
+        path = next((p for p in candidates if os.path.exists(p)), None)
+        if path is None:
+            raise FileNotFoundError(
+                f"Could not find {inner_path!r} under {faers_dir!r}. Tried: {candidates}"
+            )
+        df = pd.read_csv(path, sep="$", dtype=str, low_memory=False, nrows=max_rows)
+        df.columns = df.columns.str.lower().str.strip()
+        print(f"  {inner_path} (dir): {len(df):,} rows, columns={list(df.columns)}")
+        return df
+    return load_faers_table(faers_zip, inner_path, max_rows=max_rows)
+
+
+def _require_columns(df: pd.DataFrame, required: list, table_name: str) -> None:
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError(
+            f"{table_name} table is missing required column(s): {missing}. "
+            f"Available columns: {list(df.columns)}"
+        )
+
+
+def _warn_missing_columns(df: pd.DataFrame, expected: list, table_name: str) -> None:
+    missing = [c for c in expected if c not in df.columns]
+    if missing:
+        print(f"  [WARN] {table_name}: expected column(s) not found: {missing}")
+
+
+def _is_missing(series: pd.Series) -> pd.Series:
+    """True where a raw string-typed FAERS field is null or blank."""
+    as_str = series.astype(str)
+    return series.isna() | (as_str.str.strip() == "") | (as_str.str.strip().str.lower() == "nan")
+
+
+def load_demo_table(
+    faers_zip: str,
+    faers_dir: str,
+    inner_path: str,
+    max_rows: int = None,
+) -> pd.DataFrame:
+    """
+    Load the raw FAERS DEMO table.
+
+    Guarantees primaryid, caseid, caseversion are present (raises otherwise).
+    Warns (does not fail) if fda_dt is absent. Keeps primaryid/caseid as
+    strings. Adds caseversion_numeric (nullable Int64, safely coerced) and
+    caseversion_malformed (bool) without dropping or fixing bad rows --
+    CASEID/CASEVERSION resolution itself is Milestone 3.
+    """
+    print("  Loading DEMO table...")
+    df = _load_raw_faers_table(faers_zip, faers_dir, inner_path, max_rows=max_rows)
+    _require_columns(df, ["primaryid", "caseid", "caseversion"], "DEMO")
+    if "fda_dt" not in df.columns:
+        print("  [WARN] DEMO: 'fda_dt' column not found (optional); continuing without it")
+
+    df["primaryid"] = df["primaryid"].astype(str).str.strip()
+    df["caseid"] = df["caseid"].astype(str).str.strip()
+
+    caseversion_str = df["caseversion"].fillna("").astype(str).str.strip()
+    is_missing = caseversion_str == ""
+    numeric = pd.to_numeric(caseversion_str, errors="coerce")
+    is_malformed = (~is_missing) & numeric.isna()
+
+    df["caseversion_numeric"] = numeric.astype("Int64")
+    df["caseversion_malformed"] = is_malformed
+
+    n_malformed = int(is_malformed.sum())
+    if n_malformed:
+        print(f"  [WARN] DEMO: {n_malformed:,} rows have non-numeric caseversion values (kept, flagged)")
+
+    print(f"  DEMO loaded: {len(df):,} rows")
+    return df
+
+
+def load_drug_table(
+    faers_zip: str,
+    faers_dir: str,
+    inner_path: str,
+    max_rows: int = None,
+) -> pd.DataFrame:
+    """Load the raw FAERS DRUG table. Guarantees primaryid; warns on missing drugname/prod_ai/role_cod."""
+    print("  Loading DRUG table...")
+    df = _load_raw_faers_table(faers_zip, faers_dir, inner_path, max_rows=max_rows)
+    _require_columns(df, ["primaryid"], "DRUG")
+    _warn_missing_columns(df, ["drugname", "prod_ai", "role_cod"], "DRUG")
+    df["primaryid"] = df["primaryid"].astype(str).str.strip()
+    print(f"  DRUG loaded: {len(df):,} rows")
+    return df
+
+
+def load_reac_table(
+    faers_zip: str,
+    faers_dir: str,
+    inner_path: str,
+    max_rows: int = None,
+) -> pd.DataFrame:
+    """Load the raw FAERS REAC table. Guarantees primaryid; falls back positionally to find 'pt' if unnamed."""
+    print("  Loading REAC table...")
+    df = _load_raw_faers_table(faers_zip, faers_dir, inner_path, max_rows=max_rows)
+    _require_columns(df, ["primaryid"], "REAC")
+    if "pt" not in df.columns:
+        fallback_col = df.columns[2] if len(df.columns) > 2 else None
+        if fallback_col:
+            print(f"  [WARN] REAC: 'pt' column not found; using '{fallback_col}' as pt (positional fallback)")
+            df["pt"] = df[fallback_col]
+        else:
+            print("  [WARN] REAC: 'pt' column not found and no fallback column available")
+    df["primaryid"] = df["primaryid"].astype(str).str.strip()
+    print(f"  REAC loaded: {len(df):,} rows")
+    return df
+
+
+def compute_raw_diagnostics(
+    demo_df: pd.DataFrame,
+    drug_df: pd.DataFrame,
+    reac_df: pd.DataFrame,
+) -> dict:
+    """Compute the raw-table diagnostics required by Milestone 2 (counts, uniques, top values)."""
+    demo_primaryid = demo_df["primaryid"]
+    demo_caseid = demo_df["caseid"]
+    caseversion_numeric = demo_df["caseversion_numeric"]
+
+    demo_diag = {
+        "n_rows": int(len(demo_df)),
+        "n_unique_primaryid": int(demo_primaryid.nunique()),
+        "n_unique_caseid": int(demo_caseid.nunique()),
+        "n_missing_primaryid": int(_is_missing(demo_primaryid).sum()),
+        "n_missing_caseid": int(_is_missing(demo_caseid).sum()),
+        "n_missing_caseversion": int((demo_df["caseversion"].fillna("").astype(str).str.strip() == "").sum()),
+        "n_malformed_caseversion": int(demo_df["caseversion_malformed"].sum()),
+        "caseversion_min": int(caseversion_numeric.min()) if caseversion_numeric.notna().any() else None,
+        "caseversion_max": int(caseversion_numeric.max()) if caseversion_numeric.notna().any() else None,
+    }
+
+    drug_primaryid = drug_df["primaryid"]
+    top_role_cod = (
+        drug_df["role_cod"].fillna("(missing)").astype(str).str.strip().replace("", "(missing)")
+        .value_counts().head(10)
+        if "role_cod" in drug_df.columns else pd.Series(dtype=int)
+    )
+    drug_diag = {
+        "n_rows": int(len(drug_df)),
+        "n_unique_primaryid": int(drug_primaryid.nunique()),
+        "n_missing_primaryid": int(_is_missing(drug_primaryid).sum()),
+        "top_role_cod": {str(k): int(v) for k, v in top_role_cod.items()},
+    }
+
+    reac_primaryid = reac_df["primaryid"]
+    top_pt = (
+        reac_df["pt"].fillna("(missing)").astype(str).str.strip().replace("", "(missing)")
+        .value_counts().head(10)
+        if "pt" in reac_df.columns else pd.Series(dtype=int)
+    )
+    reac_diag = {
+        "n_rows": int(len(reac_df)),
+        "n_unique_primaryid": int(reac_primaryid.nunique()),
+        "n_missing_primaryid": int(_is_missing(reac_primaryid).sum()),
+        "top_pt": {str(k): int(v) for k, v in top_pt.items()},
+    }
+
+    return {"demo": demo_diag, "drug": drug_diag, "reac": reac_diag}
+
+
+def print_raw_diagnostics(diagnostics: dict) -> None:
+    d = diagnostics["demo"]
+    print("\n  DEMO diagnostics:")
+    print(f"    rows:                  {d['n_rows']:,}")
+    print(f"    unique primaryid:      {d['n_unique_primaryid']:,}")
+    print(f"    unique caseid:         {d['n_unique_caseid']:,}")
+    print(f"    missing primaryid:     {d['n_missing_primaryid']:,}")
+    print(f"    missing caseid:        {d['n_missing_caseid']:,}")
+    print(f"    missing caseversion:   {d['n_missing_caseversion']:,}")
+    print(f"    malformed caseversion: {d['n_malformed_caseversion']:,}")
+    print(f"    caseversion min/max:   {d['caseversion_min']} / {d['caseversion_max']}")
+
+    g = diagnostics["drug"]
+    print("\n  DRUG diagnostics:")
+    print(f"    rows:                  {g['n_rows']:,}")
+    print(f"    unique primaryid:      {g['n_unique_primaryid']:,}")
+    print(f"    missing primaryid:     {g['n_missing_primaryid']:,}")
+    print("    top role_cod values:")
+    for k, v in g["top_role_cod"].items():
+        print(f"      {k:<20} {v:,}")
+
+    r = diagnostics["reac"]
+    print("\n  REAC diagnostics:")
+    print(f"    rows:                  {r['n_rows']:,}")
+    print(f"    unique primaryid:      {r['n_unique_primaryid']:,}")
+    print(f"    missing primaryid:     {r['n_missing_primaryid']:,}")
+    print("    top PT values:")
+    for k, v in r["top_pt"].items():
+        print(f"      {k:<30} {v:,}")
+
+
+def save_raw_tables(
+    out_dir: str,
+    demo_df: pd.DataFrame,
+    drug_df: pd.DataFrame,
+    reac_df: pd.DataFrame,
+) -> None:
+    demo_path = os.path.join(out_dir, "raw_demo.parquet")
+    demo_df.to_parquet(demo_path, index=False)
+    print(f"  Saved: {demo_path}  ({len(demo_df):,} rows)")
+
+    drug_path = os.path.join(out_dir, "raw_drug.parquet")
+    drug_df.to_parquet(drug_path, index=False)
+    print(f"  Saved: {drug_path}  ({len(drug_df):,} rows)")
+
+    reac_path = os.path.join(out_dir, "raw_reac.parquet")
+    reac_df.to_parquet(reac_path, index=False)
+    print(f"  Saved: {reac_path}  ({len(reac_df):,} rows)")
+
+
+def save_raw_diagnostics(out_dir: str, diagnostics: dict) -> None:
+    path = os.path.join(out_dir, "raw_table_diagnostics.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(diagnostics, f, indent=2)
+    print(f"  Saved: {path}")
 
 
 def resolve_case_versions(demo_df: pd.DataFrame) -> pd.DataFrame:
     """
-    TODO (Milestone 2): For each caseid, keep only the primaryid belonging to
+    TODO (Milestone 3): For each caseid, keep only the primaryid belonging to
     the highest caseversion (the most recent amendment/resubmission),
     producing the authoritative primaryid -> caseid mapping ("retained
     primaryids") used to filter DRUG and REAC downstream.
     """
-    print("  [TODO] resolve_case_versions() not yet implemented (Milestone 2)")
+    print("  [TODO] resolve_case_versions() not yet implemented (Milestone 3)")
     return pd.DataFrame(columns=["primaryid", "caseid"])
 
 
@@ -209,8 +446,9 @@ def main() -> None:
         description=(
             "Corrected case-level FAERS preprocessing pipeline (NEW). "
             "Resolves CASEID/CASEVERSION so each real-world case is counted "
-            "once, ahead of drug-only R-GCN construction. Milestone 1: CLI "
-            "and placeholders only -- see file docstring for milestone status."
+            "once, ahead of drug-only R-GCN construction. Milestone 2: loads "
+            "raw DEMO/DRUG/REAC and reports raw-table diagnostics only -- "
+            "see file docstring for milestone status."
         )
     )
     input_group = parser.add_mutually_exclusive_group()
@@ -278,13 +516,23 @@ def main() -> None:
 
     os.makedirs(args.out_dir, exist_ok=True)
 
-    print("\n--- Milestone 2 (pending): load DEMO/DRUG/REAC; resolve CASEID/CASEVERSION ---")
-    demo_df = load_demo_table(args.faers_zip, _cfg.FAERS_DEMO_INNER, max_rows=args.max_rows)
-    case_map_df = resolve_case_versions(demo_df)
+    print("\n--- Milestone 2: load raw DEMO/DRUG/REAC ---")
+    demo_df = load_demo_table(args.faers_zip, args.faers_dir, _cfg.FAERS_DEMO_INNER, max_rows=args.max_rows)
+    drug_df = load_drug_table(args.faers_zip, args.faers_dir, _cfg.FAERS_DRUG_INNER, max_rows=args.max_rows)
+    reac_df = load_reac_table(args.faers_zip, args.faers_dir, _cfg.FAERS_REAC_INNER, max_rows=args.max_rows)
 
-    print("\n--- Milestone 3 (pending): filter to retained PRIMARYIDs; dedupe reactions/drugs ---")
-    case_reactions_df = build_case_reactions(pd.DataFrame(), case_map_df)
-    case_drugs_df = build_case_drugs(pd.DataFrame(), case_map_df)
+    print("\n--- Milestone 2: raw-table diagnostics ---")
+    diagnostics = compute_raw_diagnostics(demo_df, drug_df, reac_df)
+    print_raw_diagnostics(diagnostics)
+
+    print("\n--- Milestone 2: saving raw tables + diagnostics ---")
+    save_raw_tables(args.out_dir, demo_df, drug_df, reac_df)
+    save_raw_diagnostics(args.out_dir, diagnostics)
+
+    print("\n--- Milestone 3 (pending): resolve CASEID/CASEVERSION; filter to retained PRIMARYIDs; dedupe reactions/drugs ---")
+    case_map_df = resolve_case_versions(demo_df)
+    case_reactions_df = build_case_reactions(reac_df, case_map_df)
+    case_drugs_df = build_case_drugs(drug_df, case_map_df)
 
     print("\n--- Milestone 4 (pending): canonical drug-pair generation ---")
     case_drug_pairs_df = build_case_drug_pairs(case_drugs_df)
@@ -302,9 +550,11 @@ def main() -> None:
     )
 
     print("\n" + "=" * 60)
-    print("Milestone 1 complete: pipeline skeleton is wired and runnable.")
-    print("No case-level data was actually processed yet.")
-    print("Next: implement Milestone 2 (DEMO/DRUG/REAC + CASEID/CASEVERSION).")
+    print("Milestone 2 complete: raw DEMO/DRUG/REAC loaded and diagnosed.")
+    print("No CASEID/CASEVERSION resolution, drug mapping, deduplication, or")
+    print("drug-pair generation was performed yet.")
+    print(f"Raw artifacts in: {args.out_dir}")
+    print("Next: implement Milestone 3 (resolve CASEID/CASEVERSION; dedupe).")
     print("=" * 60)
 
 
