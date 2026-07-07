@@ -22,8 +22,11 @@ Milestone status
   [x] Milestone 3 -- resolve CASEID/CASEVERSION; filter to retained primaryids
   [x] Milestone 4 -- dedupe reactions per case (case_reactions.parquet)
   [x] Milestone 4b -- map + dedupe drugs per case (case_drugs.parquet)
-  [x] Milestone 4c -- selectable drug ID mode (decagon_idx / chembl_id)        (this file)
-  [ ] Milestone 5 -- canonical (drug_i, drug_j) pair generation per case
+  [x] Milestone 4c -- selectable drug ID mode (decagon_idx / chembl_id)
+  [x] Milestone 5 -- canonical (drug_a, drug_b) pair generation per case
+  [x] Milestone 5b -- expected pair-reaction join-size audit (no join)
+  [x] Milestone 5c -- role-aware pair audit (PS/SS/C/I, no filtering)
+  [x] Milestone 5d -- configurable pair-role filter (case_drug_pairs_selected)  (this file)
   [ ] Milestone 6 -- drug_pair_reaction_counts aggregation (no PRR)
   [ ] Milestone 7 -- global validation checks / PRR
 
@@ -87,9 +90,58 @@ Still explicitly out of scope:
   - drug-pair generation (Milestone 5)
   - PRR / disproportionality statistics (Milestone 7)
 
+Milestone 5 scope
+------------------
+Builds case_drug_pairs.parquet: per case, every unordered (drug_a, drug_b)
+combination of that case's unique mapped_drug_id values from case_drugs.parquet
+(drug_a < drug_b by string order, no self-pairs, no reversed duplicates).
+Cases with fewer than 2 mapped drugs emit no pairs. High-polypharmacy cases
+(many mapped drugs -> combinatorially many pairs) are audited via
+drug_pair_generation_diagnostics.json and high_polypharmacy_cases.parquet,
+not capped or filtered -- that decision is deferred, not made here.
+
+Milestone 5b scope
+--------------------
+Builds expected_pair_reaction_join_audit.parquet: per case, the *expected*
+row count of the eventual case_pair_reactions join (n_pairs_for_case *
+n_reactions_for_case), WITHOUT performing that join. Exists to answer "how
+big will Milestone 6's output be, and is it dominated by a handful of
+high-polypharmacy cases" before paying the cost of materializing it.
+
+Milestone 5c scope
+-------------------
+Builds case_drug_pair_role_audit.parquet: one row per case_drug_pairs row,
+with role-aware metadata (PS/SS/C/I per drug in the pair, C-C flag,
+has-suspect-or-interacting flag) joined in from case_drugs.roles_seen, plus
+drug_pair_role_audit_diagnostics.json, a sensitivity-analysis-only report
+of how many pairs/cases would remain under an "exclude C-C" or "require
+>=1 PS/SS/I" rule. Deliberately a separate table rather than new columns
+on case_drug_pairs.parquet, so Milestone 5's output and validation are
+untouched. No filtering is applied to case_drug_pairs.parquet itself --
+concomitant (C) drugs can still be clinically relevant, so this is
+reported as a what-if, not treated as automatically correct.
+
+Milestone 5d scope (this file)
+-------------------------------
+Adds --pair-role-filter {all_pairs, non_cc} and builds
+case_drug_pairs_selected.parquet: the actual set of pairs that would
+proceed to the (not-yet-implemented) pair-reaction join under the chosen
+filter, computed from case_drug_pairs.parquet + case_drug_pair_role_audit
+without ever mutating either. 'all_pairs' (default) keeps everything;
+'non_cc' (recommended for the thesis comparison) drops C-C pairs. This
+finally *acts* on the Milestone 5c sensitivity analysis, but only by
+producing a new selected-pairs table -- it does not delete/overwrite
+case_drug_pairs.parquet, and it still does not join with reactions.
+Still explicitly out of scope:
+  - joining selected pairs with case_reactions (Milestone 6)
+  - pair-reaction support counts / PRR (Milestone 6/7)
+  - capping/filtering high-polypharmacy cases
+  - R-GCN export, train/validation/test splitting
+  - collapsing ChEMBL salt/form ids to a parent active ingredient
+
 This file does NOT:
   - implement full preprocessing
-  - generate drug pairs
+  - join drug pairs with reactions
   - compute PRR (Proportional Reporting Ratio)
   - touch R-GCN, ChEMBL, STRING, or Decagon adjacency / training code
 
@@ -101,6 +153,7 @@ Usage
 """
 
 import argparse
+import itertools
 import json
 import os
 import re
@@ -1258,17 +1311,1058 @@ def save_case_drugs_artifacts(
 
 
 # ---------------------------------------------------------------------------
-# Milestone 5 (TODO) -- canonical drug-pair generation per case
+# Milestone 5 -- canonical drug-pair generation per case (case_drug_pairs.parquet)
 # ---------------------------------------------------------------------------
 
-def build_case_drug_pairs(case_drugs_df: pd.DataFrame) -> pd.DataFrame:
+# Audit-only thresholds for "high polypharmacy" cases (Milestone 5 requirement
+# 9): cases at/above these mapped-drug counts are reported in diagnostics and
+# saved to high_polypharmacy_cases.parquet, but never capped or filtered out.
+_HIGH_POLYPHARMACY_THRESHOLD = 10
+_HIGH_POLYPHARMACY_THRESHOLD_STRICT = 15
+
+
+def build_case_drug_pairs(case_drugs_df: pd.DataFrame, drug_id_mode: str) -> tuple:
     """
-    TODO (Milestone 5): Per case, enumerate canonical (drug_i, drug_j) pairs
-    with drug_i < drug_j (no self-pairs, no direction duplicates).
-    Output columns: caseid, drug_i, drug_j.  Saved later as case_drug_pairs.parquet.
+    Build canonical (drug_a, drug_b) pairs per case from case_drugs_df (one
+    row per (caseid, mapped_drug_id), mapped rows only -- Milestone 4b/4c).
+
+    Per case: take the case's unique mapped_drug_id values, sort them by
+    string value for a deterministic canonical order (works uniformly for
+    ChEMBL id strings in chembl_id mode and for Decagon integer indices in
+    decagon_idx mode -- the sort only needs to be stable, not numeric), then
+    emit every unordered combination with drug_a < drug_b. A case with fewer
+    than 2 mapped drugs emits no pairs. No joining with reactions and no
+    capping/filtering of high-polypharmacy cases happens here.
+
+    Returns (case_drug_pairs_df, diagnostics_dict, high_polypharmacy_df).
     """
-    print("  [TODO] build_case_drug_pairs() not yet implemented (Milestone 5)")
-    return pd.DataFrame(columns=["caseid", "drug_i", "drug_j"])
+    _require_columns(case_drugs_df, ["caseid", "mapped_drug_id"], "case_drugs")
+
+    n_input_rows = len(case_drugs_df)
+    n_unique_cases = int(case_drugs_df["caseid"].nunique())
+
+    drugs_per_case = (
+        case_drugs_df[["caseid", "mapped_drug_id"]]
+        .drop_duplicates()
+        .assign(mapped_drug_id=lambda d: d["mapped_drug_id"].astype(str))
+        .groupby("caseid")["mapped_drug_id"]
+        .apply(lambda s: sorted(s))
+    )
+    n_mapped_per_case = drugs_per_case.apply(len).rename("n_mapped_drugs_in_case")
+
+    print(f"  Generating pairs for {n_unique_cases:,} cases ({int((n_mapped_per_case >= 2).sum()):,} with >=2 mapped drugs)...")
+
+    pair_rows = [
+        (caseid, drug_a, drug_b, len(drugs))
+        for caseid, drugs in drugs_per_case.items()
+        for drug_a, drug_b in itertools.combinations(drugs, 2)
+    ]
+    case_drug_pairs_df = pd.DataFrame(
+        pair_rows, columns=["caseid", "drug_a", "drug_b", "n_mapped_drugs_in_case"]
+    )
+    case_drug_pairs_df["drug_id_mode"] = drug_id_mode
+
+    n_pairs = len(case_drug_pairs_df)
+    n_unique_pairs = (
+        int(case_drug_pairs_df[["drug_a", "drug_b"]].drop_duplicates().shape[0]) if n_pairs else 0
+    )
+    pairs_per_case = (
+        case_drug_pairs_df.groupby("caseid").size() if n_pairs else pd.Series(dtype=int)
+    )
+
+    print(
+        f"  case_drug_pairs: {n_pairs:,} pair rows "
+        f"({n_unique_pairs:,} unique (drug_a, drug_b) pairs across all cases)"
+    )
+
+    n_cases_exactly_1 = int((n_mapped_per_case == 1).sum())
+    n_cases_ge2 = int((n_mapped_per_case >= 2).sum())
+    n_high_10 = int((n_mapped_per_case >= _HIGH_POLYPHARMACY_THRESHOLD).sum())
+    n_high_15 = int((n_mapped_per_case >= _HIGH_POLYPHARMACY_THRESHOLD_STRICT).sum())
+
+    dist = n_mapped_per_case.value_counts().sort_index()
+
+    top_20 = n_mapped_per_case.sort_values(ascending=False).head(20).reset_index()
+    top_20_cases = [
+        {"caseid": str(row["caseid"]), "n_mapped_drugs_in_case": int(row["n_mapped_drugs_in_case"])}
+        for _, row in top_20.iterrows()
+    ]
+
+    diagnostics = {
+        "drug_id_mode": drug_id_mode,
+        "n_input_case_drugs_rows": n_input_rows,
+        "n_unique_cases_in_case_drugs": n_unique_cases,
+        "n_cases_with_exactly_1_mapped_drug": n_cases_exactly_1,
+        "n_cases_with_ge2_mapped_drugs": n_cases_ge2,
+        "n_generated_pair_rows": n_pairs,
+        "n_unique_drug_pairs": n_unique_pairs,
+        "max_mapped_drugs_in_one_case": int(n_mapped_per_case.max()) if len(n_mapped_per_case) else 0,
+        "max_generated_pairs_in_one_case": int(pairs_per_case.max()) if len(pairs_per_case) else 0,
+        "n_mapped_drugs_in_case_distribution": {str(int(k)): int(v) for k, v in dist.items()},
+        f"n_high_polypharmacy_cases_ge{_HIGH_POLYPHARMACY_THRESHOLD}": n_high_10,
+        f"n_high_polypharmacy_cases_ge{_HIGH_POLYPHARMACY_THRESHOLD_STRICT}": n_high_15,
+        "top_20_cases_by_mapped_drug_count": top_20_cases,
+    }
+
+    # ---- high_polypharmacy_cases: audit only, never capped/filtered above ----
+    high_mask = n_mapped_per_case >= _HIGH_POLYPHARMACY_THRESHOLD
+    high_polypharmacy_df = n_mapped_per_case[high_mask].reset_index()
+    if len(high_polypharmacy_df):
+        high_polypharmacy_df["n_pairs_generated"] = (
+            high_polypharmacy_df["n_mapped_drugs_in_case"]
+            * (high_polypharmacy_df["n_mapped_drugs_in_case"] - 1) // 2
+        )
+    else:
+        high_polypharmacy_df["n_pairs_generated"] = pd.Series(dtype=int)
+    high_polypharmacy_df["drug_id_mode"] = drug_id_mode
+    high_polypharmacy_df = high_polypharmacy_df.sort_values(
+        "n_mapped_drugs_in_case", ascending=False
+    ).reset_index(drop=True)
+
+    return case_drug_pairs_df, diagnostics, high_polypharmacy_df
+
+
+def print_drug_pair_diagnostics(diagnostics: dict) -> None:
+    d = diagnostics
+    print("\n  Drug pair generation diagnostics:")
+    print(f"    drug_id_mode:                          {d['drug_id_mode']}")
+    print(f"    input case_drugs rows:                 {d['n_input_case_drugs_rows']:,}")
+    print(f"    unique cases in case_drugs:             {d['n_unique_cases_in_case_drugs']:,}")
+    print(f"    cases with exactly 1 mapped drug:       {d['n_cases_with_exactly_1_mapped_drug']:,}")
+    print(f"    cases with >=2 mapped drugs:            {d['n_cases_with_ge2_mapped_drugs']:,}")
+    print(f"    generated pair rows:                    {d['n_generated_pair_rows']:,}")
+    print(f"    unique (drug_a, drug_b) pairs:          {d['n_unique_drug_pairs']:,}")
+    print(f"    max mapped drugs in one case:           {d['max_mapped_drugs_in_one_case']:,}")
+    print(f"    max generated pairs in one case:        {d['max_generated_pairs_in_one_case']:,}")
+    print(f"    high-polypharmacy cases (>={_HIGH_POLYPHARMACY_THRESHOLD}):          {d[f'n_high_polypharmacy_cases_ge{_HIGH_POLYPHARMACY_THRESHOLD}']:,}")
+    print(f"    high-polypharmacy cases (>={_HIGH_POLYPHARMACY_THRESHOLD_STRICT}):          {d[f'n_high_polypharmacy_cases_ge{_HIGH_POLYPHARMACY_THRESHOLD_STRICT}']:,}")
+    print("    n_mapped_drugs_in_case distribution (top 20 bucket values shown):")
+    dist_items = sorted(d["n_mapped_drugs_in_case_distribution"].items(), key=lambda kv: int(kv[0]))
+    for k, v in dist_items[:20]:
+        print(f"      {k:>4} drug(s): {v:,} cases")
+    if len(dist_items) > 20:
+        print(f"      ... ({len(dist_items) - 20} more distinct counts)")
+    print("    top 20 cases by mapped drug count:")
+    for row in d["top_20_cases_by_mapped_drug_count"]:
+        print(f"      caseid={row['caseid']:<12} n_mapped_drugs_in_case={row['n_mapped_drugs_in_case']:,}")
+
+
+def run_case_drug_pairs_validation(
+    case_drugs_df: pd.DataFrame,
+    case_drug_pairs_df: pd.DataFrame,
+    drug_id_mode: str,
+) -> None:
+    """
+    Validate case_drug_pairs. Raises AssertionError listing every failed
+    check -- a pair-generation bug here would silently corrupt every
+    downstream pair-reaction count and PRR calculation, so it fails loudly.
+    """
+    failures = []
+
+    required_cols = ["caseid", "drug_a", "drug_b", "n_mapped_drugs_in_case", "drug_id_mode"]
+    missing_cols = [c for c in required_cols if c not in case_drug_pairs_df.columns]
+    if missing_cols:
+        failures.append(f"case_drug_pairs is missing required column(s): {missing_cols}")
+        raise AssertionError("Milestone 5 (case_drug_pairs) validation failed:\n  - " + "\n  - ".join(failures))
+
+    if case_drug_pairs_df["caseid"].isna().any():
+        failures.append("case_drug_pairs has rows with null caseid")
+    if case_drug_pairs_df["drug_a"].isna().any():
+        failures.append("case_drug_pairs has rows with null drug_a")
+    if case_drug_pairs_df["drug_b"].isna().any():
+        failures.append("case_drug_pairs has rows with null drug_b")
+
+    if (case_drug_pairs_df["drug_a"] == case_drug_pairs_df["drug_b"]).any():
+        failures.append("case_drug_pairs has self-pairs (drug_a == drug_b)")
+
+    if (case_drug_pairs_df["drug_a"] > case_drug_pairs_df["drug_b"]).any():
+        failures.append("case_drug_pairs has rows where drug_a > drug_b (canonical ordering violated)")
+
+    if case_drug_pairs_df.duplicated(subset=["caseid", "drug_a", "drug_b"]).any():
+        failures.append("case_drug_pairs has duplicate (caseid, drug_a, drug_b) rows")
+
+    # Generated pair count per case must equal n * (n - 1) / 2, n = unique
+    # mapped drugs for that case in case_drugs (not just cases that produced
+    # pairs -- a case with 1 mapped drug must produce exactly 0).
+    n_unique_drugs_per_case = (
+        case_drugs_df[["caseid", "mapped_drug_id"]].drop_duplicates().groupby("caseid").size()
+    )
+    expected_pairs_per_case = (n_unique_drugs_per_case * (n_unique_drugs_per_case - 1) // 2).rename(
+        "expected_pairs"
+    )
+    actual_pairs_per_case = case_drug_pairs_df.groupby("caseid").size().rename("actual_pairs")
+    check_df = pd.DataFrame({"expected_pairs": expected_pairs_per_case}).join(
+        pd.DataFrame({"actual_pairs": actual_pairs_per_case}), how="left"
+    )
+    check_df["actual_pairs"] = check_df["actual_pairs"].fillna(0).astype(int)
+    mismatched = check_df["expected_pairs"] != check_df["actual_pairs"]
+    if mismatched.any():
+        failures.append(
+            f"{int(mismatched.sum()):,} cases have generated pair count != n*(n-1)/2 "
+            f"for their unique mapped-drug count in case_drugs"
+        )
+
+    valid_caseids = set(case_drugs_df["caseid"])
+    if not set(case_drug_pairs_df["caseid"]).issubset(valid_caseids):
+        failures.append("case_drug_pairs contains a caseid not present in case_drugs")
+
+    modes = set(case_drug_pairs_df["drug_id_mode"].dropna().unique())
+    if modes and modes != {drug_id_mode}:
+        failures.append(
+            f"case_drug_pairs.drug_id_mode has value(s) {sorted(modes)}, expected only {drug_id_mode!r}"
+        )
+    elif not modes and len(case_drug_pairs_df):
+        failures.append("case_drug_pairs.drug_id_mode is entirely null")
+
+    if failures:
+        raise AssertionError("Milestone 5 (case_drug_pairs) validation failed:\n  - " + "\n  - ".join(failures))
+
+    print("  All Milestone 5 (case_drug_pairs) validation checks passed:")
+    print("    - case_drug_pairs has required columns")
+    print("    - no missing caseid / drug_a / drug_b")
+    print("    - no self-pairs (drug_a == drug_b)")
+    print("    - no rows with drug_a > drug_b")
+    print("    - no duplicate (caseid, drug_a, drug_b)")
+    print("    - generated pair count == n*(n-1)/2 for every case")
+    print("    - every case_drug_pairs.caseid present in case_drugs")
+    print("    - drug_id_mode present and consistent with the current run")
+
+
+def save_case_drug_pairs_artifacts(
+    out_dir: str,
+    case_drug_pairs_df: pd.DataFrame,
+    diagnostics: dict,
+    high_polypharmacy_df: pd.DataFrame,
+) -> None:
+    pairs_path = os.path.join(out_dir, "case_drug_pairs.parquet")
+    case_drug_pairs_df.to_parquet(pairs_path, index=False)
+    print(f"  Saved: {pairs_path}  ({len(case_drug_pairs_df):,} rows)")
+
+    diagnostics_path = os.path.join(out_dir, "drug_pair_generation_diagnostics.json")
+    with open(diagnostics_path, "w", encoding="utf-8") as f:
+        json.dump(diagnostics, f, indent=2)
+    print(f"  Saved: {diagnostics_path}")
+
+    high_path = os.path.join(out_dir, "high_polypharmacy_cases.parquet")
+    high_polypharmacy_df.to_parquet(high_path, index=False)
+    print(f"  Saved: {high_path}  ({len(high_polypharmacy_df):,} rows, >= {_HIGH_POLYPHARMACY_THRESHOLD} mapped drugs; audit only, not filtered)")
+
+
+# ---------------------------------------------------------------------------
+# Milestone 5b -- expected pair-reaction join-size audit (audit only, no join)
+# ---------------------------------------------------------------------------
+#
+# TODO (deferred, not addressed by this milestone):
+#   - high-polypharmacy cases may dominate the eventual case_pair_reactions
+#     table (this audit exists to quantify that before we pay the cost of
+#     materializing the join)
+#   - a future sensitivity analysis may compare capping thresholds such as
+#     max 50 or max 100 mapped drugs per case and re-measure join size
+#   - a future role-aware analysis may compare "all pairs" against pairs
+#     filtered/weighted by role_cod (PS/SS/I/C), since this milestone's
+#     n_pairs_for_case counts every mapped-drug pair regardless of role
+#   - a future mapping refinement may collapse ChEMBL salt/form ids (e.g.
+#     "methotrexate" vs "methotrexate sodium") to a parent active
+#     ingredient, which would shrink n_mapped_drugs_in_case (and therefore
+#     n_pairs_for_case) for cases like caseid 14638057 (see manual audit)
+
+# Spot-check values for the manually-audited high-polypharmacy case from the
+# --max-rows 300000 --drug-id-mode chembl_id run (200 mapped drugs -> 19,900
+# pairs; 196 reactions). Used by run_expected_pair_reaction_join_audit_validation()
+# as a regression check, not a general invariant -- skipped if this caseid
+# isn't present in the current run (e.g. a smaller --max-rows sample).
+_KNOWN_AUDIT_CASEID = "14638057"
+_KNOWN_AUDIT_CASEID_N_PAIRS = 19900
+_KNOWN_AUDIT_CASEID_N_REACTIONS = 196
+
+
+def build_expected_pair_reaction_join_audit(
+    case_drug_pairs_df: pd.DataFrame,
+    case_reactions_df: pd.DataFrame,
+) -> tuple:
+    """
+    Audit-only: estimate the size of the eventual case_pair_reactions join
+    (Milestone 6) before materializing it, and quantify whether a small
+    number of high-polypharmacy cases dominate that size. Does NOT perform
+    the actual pair/reaction join -- no drug or reaction row is combined
+    here, only per-case counts and their product.
+
+    Per caseid (union of caseids appearing in case_drug_pairs_df and/or
+    case_reactions_df):
+      n_pairs_for_case          -- row count for that caseid in case_drug_pairs_df (0 if none)
+      n_reactions_for_case      -- row count for that caseid in case_reactions_df (0 if none)
+      n_mapped_drugs_in_case    -- carried from case_drug_pairs_df (constant per case there);
+                                    0 for a case with no pairs, since a case with 0 or 1 mapped
+                                    drug never appears in case_drug_pairs_df and this function
+                                    (by design) does not take case_drugs_df as input to
+                                    distinguish those two. This does not affect
+                                    expected_pair_reaction_rows, which is correctly 0 for such
+                                    cases regardless (n_pairs_for_case is already 0).
+      expected_pair_reaction_rows = n_pairs_for_case * n_reactions_for_case
+
+    Returns (audit_df, diagnostics_dict).
+    """
+    _require_columns(case_drug_pairs_df, ["caseid", "n_mapped_drugs_in_case"], "case_drug_pairs")
+    _require_columns(case_reactions_df, ["caseid"], "case_reactions")
+
+    if len(case_drug_pairs_df):
+        pairs_per_case = case_drug_pairs_df.groupby("caseid").agg(
+            n_pairs_for_case=("caseid", "size"),
+            n_mapped_drugs_in_case=("n_mapped_drugs_in_case", "first"),
+        )
+    else:
+        pairs_per_case = pd.DataFrame(
+            columns=["n_pairs_for_case", "n_mapped_drugs_in_case"]
+        ).rename_axis("caseid")
+
+    if len(case_reactions_df):
+        reactions_per_case = (
+            case_reactions_df.groupby("caseid").size().rename("n_reactions_for_case").to_frame()
+        )
+    else:
+        reactions_per_case = pd.DataFrame(columns=["n_reactions_for_case"]).rename_axis("caseid")
+
+    audit_df = pairs_per_case.join(reactions_per_case, how="outer")
+    audit_df["n_pairs_for_case"] = audit_df["n_pairs_for_case"].fillna(0).astype(int)
+    audit_df["n_reactions_for_case"] = audit_df["n_reactions_for_case"].fillna(0).astype(int)
+    audit_df["n_mapped_drugs_in_case"] = audit_df["n_mapped_drugs_in_case"].fillna(0).astype(int)
+    audit_df["expected_pair_reaction_rows"] = (
+        audit_df["n_pairs_for_case"].astype("int64") * audit_df["n_reactions_for_case"].astype("int64")
+    )
+    audit_df = audit_df.reset_index().rename(columns={"index": "caseid"})[
+        ["caseid", "n_mapped_drugs_in_case", "n_pairs_for_case", "n_reactions_for_case", "expected_pair_reaction_rows"]
+    ]
+
+    n_cases_with_pairs = int((audit_df["n_pairs_for_case"] > 0).sum())
+    n_cases_with_reactions = int((audit_df["n_reactions_for_case"] > 0).sum())
+    n_cases_with_both = int(
+        ((audit_df["n_pairs_for_case"] > 0) & (audit_df["n_reactions_for_case"] > 0)).sum()
+    )
+
+    total_expected = int(audit_df["expected_pair_reaction_rows"].sum())
+    print(
+        f"  Expected pair-reaction join size: {total_expected:,} rows across "
+        f"{len(audit_df):,} cases ({n_cases_with_both:,} with both pairs and reactions)"
+    )
+
+    sorted_by_expected = audit_df.sort_values("expected_pair_reaction_rows", ascending=False)
+    top_20 = sorted_by_expected.head(20)
+    top_20_cases = [
+        {
+            "caseid": str(row["caseid"]),
+            "n_mapped_drugs_in_case": int(row["n_mapped_drugs_in_case"]),
+            "n_pairs_for_case": int(row["n_pairs_for_case"]),
+            "n_reactions_for_case": int(row["n_reactions_for_case"]),
+            "expected_pair_reaction_rows": int(row["expected_pair_reaction_rows"]),
+        }
+        for _, row in top_20.iterrows()
+    ]
+
+    def _pct_from_mask(mask: pd.Series) -> float:
+        return (float(audit_df.loc[mask, "expected_pair_reaction_rows"].sum()) / total_expected * 100.0) if total_expected else 0.0
+
+    def _pct_top_n(n: int) -> float:
+        return (float(sorted_by_expected["expected_pair_reaction_rows"].head(n).sum()) / total_expected * 100.0) if total_expected else 0.0
+
+    diagnostics = {
+        "total_expected_pair_reaction_rows": total_expected,
+        "n_cases_in_audit": int(len(audit_df)),
+        "n_cases_with_pairs": n_cases_with_pairs,
+        "n_cases_with_reactions": n_cases_with_reactions,
+        "n_cases_with_both_pairs_and_reactions": n_cases_with_both,
+        "max_mapped_drugs_in_one_case": int(audit_df["n_mapped_drugs_in_case"].max()) if len(audit_df) else 0,
+        "max_pairs_in_one_case": int(audit_df["n_pairs_for_case"].max()) if len(audit_df) else 0,
+        "max_reactions_in_one_case": int(audit_df["n_reactions_for_case"].max()) if len(audit_df) else 0,
+        "max_expected_rows_from_one_case": int(audit_df["expected_pair_reaction_rows"].max()) if len(audit_df) else 0,
+        "pct_expected_rows_from_cases_with_mapped_drugs_ge10": _pct_from_mask(audit_df["n_mapped_drugs_in_case"] >= 10),
+        "pct_expected_rows_from_cases_with_mapped_drugs_ge20": _pct_from_mask(audit_df["n_mapped_drugs_in_case"] >= 20),
+        "pct_expected_rows_from_cases_with_mapped_drugs_ge50": _pct_from_mask(audit_df["n_mapped_drugs_in_case"] >= 50),
+        "pct_expected_rows_from_cases_with_mapped_drugs_ge100": _pct_from_mask(audit_df["n_mapped_drugs_in_case"] >= 100),
+        "pct_expected_rows_from_top_1_case": _pct_top_n(1),
+        "pct_expected_rows_from_top_10_cases": _pct_top_n(10),
+        "pct_expected_rows_from_top_100_cases": _pct_top_n(100),
+        "top_20_cases_by_expected_pair_reaction_rows": top_20_cases,
+    }
+
+    return audit_df, diagnostics
+
+
+def print_expected_pair_reaction_join_diagnostics(diagnostics: dict) -> None:
+    d = diagnostics
+    print("\n  Expected pair-reaction join-size audit:")
+    print(f"    total expected pair-reaction rows:     {d['total_expected_pair_reaction_rows']:,}")
+    print(f"    cases in audit:                        {d['n_cases_in_audit']:,}")
+    print(f"    cases with pairs:                      {d['n_cases_with_pairs']:,}")
+    print(f"    cases with reactions:                  {d['n_cases_with_reactions']:,}")
+    print(f"    cases with both pairs and reactions:   {d['n_cases_with_both_pairs_and_reactions']:,}")
+    print(f"    max mapped drugs in one case:           {d['max_mapped_drugs_in_one_case']:,}")
+    print(f"    max pairs in one case:                  {d['max_pairs_in_one_case']:,}")
+    print(f"    max reactions in one case:               {d['max_reactions_in_one_case']:,}")
+    print(f"    max expected rows from one case:        {d['max_expected_rows_from_one_case']:,}")
+    print("    % of expected rows from cases with n_mapped_drugs_in_case >=:")
+    print(f"      >=10:  {d['pct_expected_rows_from_cases_with_mapped_drugs_ge10']:.2f}%")
+    print(f"      >=20:  {d['pct_expected_rows_from_cases_with_mapped_drugs_ge20']:.2f}%")
+    print(f"      >=50:  {d['pct_expected_rows_from_cases_with_mapped_drugs_ge50']:.2f}%")
+    print(f"      >=100: {d['pct_expected_rows_from_cases_with_mapped_drugs_ge100']:.2f}%")
+    print("    % of expected rows from:")
+    print(f"      top 1 case:    {d['pct_expected_rows_from_top_1_case']:.2f}%")
+    print(f"      top 10 cases:  {d['pct_expected_rows_from_top_10_cases']:.2f}%")
+    print(f"      top 100 cases: {d['pct_expected_rows_from_top_100_cases']:.2f}%")
+    print("    top 20 cases by expected pair-reaction rows:")
+    for row in d["top_20_cases_by_expected_pair_reaction_rows"]:
+        print(
+            f"      caseid={row['caseid']:<12} "
+            f"n_mapped_drugs={row['n_mapped_drugs_in_case']:>4} "
+            f"n_pairs={row['n_pairs_for_case']:>7,} "
+            f"n_reactions={row['n_reactions_for_case']:>4} "
+            f"expected_rows={row['expected_pair_reaction_rows']:>10,}"
+        )
+
+
+def run_expected_pair_reaction_join_audit_validation(
+    case_drug_pairs_df: pd.DataFrame,
+    case_reactions_df: pd.DataFrame,
+    audit_df: pd.DataFrame,
+) -> None:
+    """
+    Validate expected_pair_reaction_join_audit. Raises AssertionError listing
+    every failed check -- this audit exists specifically to catch a
+    dominating-case problem before Milestone 6 pays the cost of the real
+    join, so a silent bug here would defeat its purpose.
+    """
+    failures = []
+
+    required_cols = [
+        "caseid", "n_mapped_drugs_in_case", "n_pairs_for_case",
+        "n_reactions_for_case", "expected_pair_reaction_rows",
+    ]
+    missing_cols = [c for c in required_cols if c not in audit_df.columns]
+    if missing_cols:
+        failures.append(f"audit_df is missing required column(s): {missing_cols}")
+        raise AssertionError(
+            "Expected pair-reaction join audit validation failed:\n  - " + "\n  - ".join(failures)
+        )
+
+    if audit_df["caseid"].isna().any():
+        failures.append("audit_df has rows with null caseid")
+    if (audit_df["n_pairs_for_case"] < 0).any():
+        failures.append("audit_df has rows with n_pairs_for_case < 0")
+    if (audit_df["n_reactions_for_case"] < 0).any():
+        failures.append("audit_df has rows with n_reactions_for_case < 0")
+
+    recomputed = audit_df["n_pairs_for_case"].astype("int64") * audit_df["n_reactions_for_case"].astype("int64")
+    if (audit_df["expected_pair_reaction_rows"].astype("int64") != recomputed).any():
+        failures.append("audit_df.expected_pair_reaction_rows != n_pairs_for_case * n_reactions_for_case for some rows")
+
+    valid_caseids = set(case_drug_pairs_df["caseid"]) | set(case_reactions_df["caseid"])
+    if not set(audit_df["caseid"]).issubset(valid_caseids):
+        failures.append("audit_df contains a caseid not present in case_drug_pairs or case_reactions")
+
+    known_case_rows = audit_df[audit_df["caseid"] == _KNOWN_AUDIT_CASEID]
+    if len(known_case_rows):
+        row = known_case_rows.iloc[0]
+        if int(row["n_pairs_for_case"]) != _KNOWN_AUDIT_CASEID_N_PAIRS:
+            failures.append(
+                f"caseid {_KNOWN_AUDIT_CASEID} (known audit case) has n_pairs_for_case="
+                f"{int(row['n_pairs_for_case']):,}, expected {_KNOWN_AUDIT_CASEID_N_PAIRS:,}"
+            )
+        if int(row["n_reactions_for_case"]) != _KNOWN_AUDIT_CASEID_N_REACTIONS:
+            failures.append(
+                f"caseid {_KNOWN_AUDIT_CASEID} (known audit case) has n_reactions_for_case="
+                f"{int(row['n_reactions_for_case']):,}, expected {_KNOWN_AUDIT_CASEID_N_REACTIONS:,}"
+            )
+
+    if failures:
+        raise AssertionError(
+            "Expected pair-reaction join audit validation failed:\n  - " + "\n  - ".join(failures)
+        )
+
+    print("  All expected pair-reaction join audit validation checks passed:")
+    print("    - audit_df has required columns")
+    print("    - no missing caseid")
+    print("    - n_pairs_for_case >= 0 and n_reactions_for_case >= 0")
+    print("    - expected_pair_reaction_rows == n_pairs_for_case * n_reactions_for_case")
+    print("    - every audit caseid present in case_drug_pairs or case_reactions")
+    print(f"    - known audit case {_KNOWN_AUDIT_CASEID} matches expected pairs/reactions (if present in this run)")
+
+
+def save_expected_pair_reaction_join_audit_artifacts(
+    out_dir: str,
+    audit_df: pd.DataFrame,
+    diagnostics: dict,
+) -> None:
+    audit_path = os.path.join(out_dir, "expected_pair_reaction_join_audit.parquet")
+    audit_df.to_parquet(audit_path, index=False)
+    print(f"  Saved: {audit_path}  ({len(audit_df):,} rows)")
+
+    diagnostics_path = os.path.join(out_dir, "expected_pair_reaction_join_diagnostics.json")
+    with open(diagnostics_path, "w", encoding="utf-8") as f:
+        json.dump(diagnostics, f, indent=2)
+    print(f"  Saved: {diagnostics_path}")
+
+
+# ---------------------------------------------------------------------------
+# Milestone 5c -- role-aware pair metadata / sensitivity audit (no filtering)
+# ---------------------------------------------------------------------------
+#
+# TODO (deferred, not addressed by this milestone):
+#   - a future final-preprocessing decision may compare three variants:
+#     all pairs / exclude C-C / require >=1 PS, SS, or I -- this milestone
+#     only reports what each variant's size would be, it picks none of them
+#   - role-aware filtering (dropping C-C pairs, or requiring a suspect role)
+#     is NOT automatically "more correct": concomitant (C) drugs can still
+#     be clinically relevant to an adverse event (e.g. a drug-drug
+#     interaction where neither drug is the "suspect"), so this is a
+#     sensitivity analysis to inform that decision, not a recommendation
+
+_ROLE_PS, _ROLE_SS, _ROLE_I, _ROLE_C = "PS", "SS", "I", "C"
+
+
+def _role_set(roles) -> set:
+    """Normalize a case_drugs.roles_seen cell (list/tuple/ndarray/None) to a plain set."""
+    if roles is None or (isinstance(roles, float) and pd.isna(roles)):
+        return set()
+    try:
+        return set(roles)
+    except TypeError:
+        return set()
+
+
+def build_case_drug_pair_role_audit(
+    case_drug_pairs_df: pd.DataFrame,
+    case_drugs_df: pd.DataFrame,
+    drug_id_mode: str,
+) -> tuple:
+    """
+    Sensitivity-analysis-only audit: attach FAERS role_cod metadata
+    (PS/SS/C/I, from case_drugs.roles_seen) to each row of case_drug_pairs
+    and report how many pairs/cases would remain under an "exclude C-C" or
+    "require >=1 PS/SS/I" rule.
+
+    Deliberately a SEPARATE table (case_drug_pair_role_audit.parquet)
+    rather than new columns bolted onto case_drug_pairs.parquet: keeps
+    Milestone 5's case_drug_pairs.parquet and its validation completely
+    unchanged, and keeps this audit's role-metadata columns out of the
+    core pair table that Milestone 6 will actually join against. Does NOT
+    filter case_drug_pairs.parquet -- see the module-level TODO above.
+
+    Returns (role_audit_df, diagnostics_dict).
+    """
+    _require_columns(case_drug_pairs_df, ["caseid", "drug_a", "drug_b"], "case_drug_pairs")
+    _require_columns(case_drugs_df, ["caseid", "mapped_drug_id", "roles_seen"], "case_drugs")
+
+    roles_only = case_drugs_df[["caseid", "mapped_drug_id", "roles_seen"]].copy()
+    roles_only["mapped_drug_id"] = roles_only["mapped_drug_id"].astype(str)
+
+    audit_df = case_drug_pairs_df[["caseid", "drug_a", "drug_b"]].copy()
+    audit_df["drug_a"] = audit_df["drug_a"].astype(str)
+    audit_df["drug_b"] = audit_df["drug_b"].astype(str)
+
+    audit_df = audit_df.merge(
+        roles_only.rename(columns={"mapped_drug_id": "drug_a", "roles_seen": "roles_a"}),
+        on=["caseid", "drug_a"], how="left",
+    ).merge(
+        roles_only.rename(columns={"mapped_drug_id": "drug_b", "roles_seen": "roles_b"}),
+        on=["caseid", "drug_b"], how="left",
+    )
+
+    role_sets_a = audit_df["roles_a"].apply(_role_set)
+    role_sets_b = audit_df["roles_b"].apply(_role_set)
+
+    audit_df["drug_a_has_ps"] = role_sets_a.apply(lambda s: _ROLE_PS in s)
+    audit_df["drug_b_has_ps"] = role_sets_b.apply(lambda s: _ROLE_PS in s)
+    audit_df["drug_a_has_ss"] = role_sets_a.apply(lambda s: _ROLE_SS in s)
+    audit_df["drug_b_has_ss"] = role_sets_b.apply(lambda s: _ROLE_SS in s)
+    audit_df["drug_a_has_i"] = role_sets_a.apply(lambda s: _ROLE_I in s)
+    audit_df["drug_b_has_i"] = role_sets_b.apply(lambda s: _ROLE_I in s)
+    audit_df["drug_a_only_c"] = role_sets_a.apply(lambda s: s == {_ROLE_C})
+    audit_df["drug_b_only_c"] = role_sets_b.apply(lambda s: s == {_ROLE_C})
+    audit_df["is_cc_pair"] = audit_df["drug_a_only_c"] & audit_df["drug_b_only_c"]
+
+    pair_has_ps = audit_df["drug_a_has_ps"] | audit_df["drug_b_has_ps"]
+    pair_has_ss = audit_df["drug_a_has_ss"] | audit_df["drug_b_has_ss"]
+    pair_has_i = audit_df["drug_a_has_i"] | audit_df["drug_b_has_i"]
+    audit_df["has_suspect_or_interacting"] = pair_has_ps | pair_has_ss | pair_has_i
+    audit_df["drug_id_mode"] = drug_id_mode
+
+    audit_df = audit_df[[
+        "caseid", "drug_a", "drug_b", "roles_a", "roles_b",
+        "drug_a_has_ps", "drug_b_has_ps", "drug_a_has_ss", "drug_b_has_ss",
+        "drug_a_has_i", "drug_b_has_i", "drug_a_only_c", "drug_b_only_c",
+        "is_cc_pair", "has_suspect_or_interacting", "drug_id_mode",
+    ]]
+
+    n_total = len(audit_df)
+    n_cc = int(audit_df["is_cc_pair"].sum())
+    n_with_ps = int(pair_has_ps.sum())
+    n_with_ss = int(pair_has_ss.sum())
+    n_with_i = int(pair_has_i.sum())
+    n_suspect_or_interacting = int(audit_df["has_suspect_or_interacting"].sum())
+
+    def _pct(n: int) -> float:
+        return (n / n_total * 100.0) if n_total else 0.0
+
+    print(
+        f"  Role-aware pair audit: {n_total:,} pairs -- {n_cc:,} C-C ({_pct(n_cc):.1f}%), "
+        f"{n_suspect_or_interacting:,} with >=1 PS/SS/I ({_pct(n_suspect_or_interacting):.1f}%)"
+    )
+
+    # ---- per-case aggregation ----
+    per_case_src = audit_df[["caseid", "is_cc_pair", "has_suspect_or_interacting"]].copy()
+    per_case_src["pair_has_ps"] = pair_has_ps.values
+    per_case_src["pair_has_ss"] = pair_has_ss.values
+    per_case_src["pair_has_i"] = pair_has_i.values
+    per_case = per_case_src.groupby("caseid").agg(
+        n_pairs=("caseid", "size"),
+        n_cc_pairs=("is_cc_pair", "sum"),
+        n_pairs_with_ps=("pair_has_ps", "sum"),
+        n_pairs_with_ss=("pair_has_ss", "sum"),
+        n_pairs_with_i=("pair_has_i", "sum"),
+        n_pairs_suspect_or_interacting=("has_suspect_or_interacting", "sum"),
+    ).reset_index()
+    per_case["pct_cc_pairs"] = per_case.apply(
+        lambda r: (r["n_cc_pairs"] / r["n_pairs"] * 100.0) if r["n_pairs"] else 0.0, axis=1
+    )
+    per_case["n_pairs_remaining_exclude_cc"] = per_case["n_pairs"] - per_case["n_cc_pairs"]
+
+    def _case_rows(df: pd.DataFrame) -> list:
+        return [
+            {
+                "caseid": str(row["caseid"]),
+                "n_pairs": int(row["n_pairs"]),
+                "n_cc_pairs": int(row["n_cc_pairs"]),
+                "pct_cc_pairs": float(row["pct_cc_pairs"]),
+            }
+            for _, row in df.iterrows()
+        ]
+
+    top_20_by_n_cc = per_case.sort_values("n_cc_pairs", ascending=False).head(20)
+    top_20_by_pct_cc = per_case.sort_values(
+        ["pct_cc_pairs", "n_pairs"], ascending=[False, False]
+    ).head(20)
+
+    known_case_row = per_case[per_case["caseid"] == _KNOWN_AUDIT_CASEID]
+    known_case_summary = None
+    if len(known_case_row):
+        r = known_case_row.iloc[0]
+        known_case_summary = {
+            "caseid": _KNOWN_AUDIT_CASEID,
+            "total_pairs": int(r["n_pairs"]),
+            "cc_pairs": int(r["n_cc_pairs"]),
+            "pairs_with_ge1_ps_ss_or_i": int(r["n_pairs_suspect_or_interacting"]),
+        }
+
+    n_cases_total = int(per_case["caseid"].nunique())
+    n_cases_remaining_exclude_cc = int((per_case["n_pairs_remaining_exclude_cc"] > 0).sum())
+    n_cases_remaining_require_suspect = int((per_case["n_pairs_suspect_or_interacting"] > 0).sum())
+
+    diagnostics = {
+        "drug_id_mode": drug_id_mode,
+        "total_pair_rows": n_total,
+        "n_cc_pairs": n_cc,
+        "pct_cc_pairs": _pct(n_cc),
+        "n_pairs_with_ge1_ps": n_with_ps,
+        "pct_pairs_with_ge1_ps": _pct(n_with_ps),
+        "n_pairs_with_ge1_ss": n_with_ss,
+        "pct_pairs_with_ge1_ss": _pct(n_with_ss),
+        "n_pairs_with_ge1_i": n_with_i,
+        "pct_pairs_with_ge1_i": _pct(n_with_i),
+        "n_pairs_with_ge1_ps_ss_or_i": n_suspect_or_interacting,
+        "pct_pairs_with_ge1_ps_ss_or_i": _pct(n_suspect_or_interacting),
+        "n_cases_in_audit": n_cases_total,
+        "per_case_pct_cc_pairs_summary": {
+            "mean": float(per_case["pct_cc_pairs"].mean()) if n_cases_total else None,
+            "median": float(per_case["pct_cc_pairs"].median()) if n_cases_total else None,
+            "min": float(per_case["pct_cc_pairs"].min()) if n_cases_total else None,
+            "max": float(per_case["pct_cc_pairs"].max()) if n_cases_total else None,
+        },
+        "top_20_cases_by_n_cc_pairs": _case_rows(top_20_by_n_cc),
+        "top_20_cases_by_pct_cc_pairs": _case_rows(top_20_by_pct_cc),
+        f"case_{_KNOWN_AUDIT_CASEID}_summary": known_case_summary,
+        # Sensitivity analysis only -- NOT applied to case_drug_pairs.parquet.
+        "sensitivity_exclude_cc": {
+            "n_pairs_remaining": n_total - n_cc,
+            "n_cases_with_ge1_pair_remaining": n_cases_remaining_exclude_cc,
+        },
+        "sensitivity_require_ps_ss_or_i": {
+            "n_pairs_remaining": n_suspect_or_interacting,
+            "n_cases_with_ge1_pair_remaining": n_cases_remaining_require_suspect,
+        },
+    }
+
+    return audit_df, diagnostics
+
+
+def print_drug_pair_role_audit_diagnostics(diagnostics: dict) -> None:
+    d = diagnostics
+    print("\n  Role-aware pair audit diagnostics:")
+    print(f"    drug_id_mode:                          {d['drug_id_mode']}")
+    print(f"    total pair rows:                       {d['total_pair_rows']:,}")
+    print(f"    C-C pairs:                              {d['n_cc_pairs']:,} ({d['pct_cc_pairs']:.2f}%)")
+    print(f"    pairs with >=1 PS:                      {d['n_pairs_with_ge1_ps']:,} ({d['pct_pairs_with_ge1_ps']:.2f}%)")
+    print(f"    pairs with >=1 SS:                      {d['n_pairs_with_ge1_ss']:,} ({d['pct_pairs_with_ge1_ss']:.2f}%)")
+    print(f"    pairs with >=1 I:                       {d['n_pairs_with_ge1_i']:,} ({d['pct_pairs_with_ge1_i']:.2f}%)")
+    print(f"    pairs with >=1 PS/SS/I:                 {d['n_pairs_with_ge1_ps_ss_or_i']:,} ({d['pct_pairs_with_ge1_ps_ss_or_i']:.2f}%)")
+    print(f"    cases in audit:                         {d['n_cases_in_audit']:,}")
+    s = d["per_case_pct_cc_pairs_summary"]
+    if s["mean"] is not None:
+        print(f"    per-case %% C-C pairs: mean={s['mean']:.1f}% median={s['median']:.1f}% min={s['min']:.1f}% max={s['max']:.1f}%")
+    print("    top 20 cases by # C-C pairs:")
+    for row in d["top_20_cases_by_n_cc_pairs"]:
+        print(f"      caseid={row['caseid']:<12} n_cc_pairs={row['n_cc_pairs']:>6,} / n_pairs={row['n_pairs']:>6,} ({row['pct_cc_pairs']:.1f}%)")
+    print("    top 20 cases by %% C-C pairs:")
+    for row in d["top_20_cases_by_pct_cc_pairs"]:
+        print(f"      caseid={row['caseid']:<12} pct_cc={row['pct_cc_pairs']:>6.1f}% (n_pairs={row['n_pairs']:,}, n_cc_pairs={row['n_cc_pairs']:,})")
+    known_key = f"case_{_KNOWN_AUDIT_CASEID}_summary"
+    if d.get(known_key):
+        k = d[known_key]
+        print(f"    caseid {_KNOWN_AUDIT_CASEID}: total_pairs={k['total_pairs']:,}  cc_pairs={k['cc_pairs']:,}  pairs_with_ge1_ps_ss_or_i={k['pairs_with_ge1_ps_ss_or_i']:,}")
+    print("    sensitivity analysis (NOT applied to case_drug_pairs.parquet):")
+    exc = d["sensitivity_exclude_cc"]
+    req = d["sensitivity_require_ps_ss_or_i"]
+    print(f"      exclude C-C:              {exc['n_pairs_remaining']:,} pairs remain across {exc['n_cases_with_ge1_pair_remaining']:,} cases")
+    print(f"      require >=1 PS/SS/I:      {req['n_pairs_remaining']:,} pairs remain across {req['n_cases_with_ge1_pair_remaining']:,} cases")
+
+
+def run_drug_pair_role_audit_validation(
+    case_drug_pairs_df: pd.DataFrame,
+    role_audit_df: pd.DataFrame,
+    diagnostics: dict,
+) -> None:
+    """
+    Validate case_drug_pair_role_audit. Raises AssertionError listing every
+    failed check -- since this is a sensitivity analysis that will inform a
+    real filtering decision later, a silently-wrong percentage or pair count
+    here would be worse than no audit at all.
+    """
+    failures = []
+
+    required_cols = [
+        "caseid", "drug_a", "drug_b", "roles_a", "roles_b",
+        "drug_a_has_ps", "drug_b_has_ps", "drug_a_has_ss", "drug_b_has_ss",
+        "drug_a_has_i", "drug_b_has_i", "drug_a_only_c", "drug_b_only_c",
+        "is_cc_pair", "has_suspect_or_interacting", "drug_id_mode",
+    ]
+    missing_cols = [c for c in required_cols if c not in role_audit_df.columns]
+    if missing_cols:
+        failures.append(f"role_audit_df is missing required column(s): {missing_cols}")
+        raise AssertionError("Role-aware pair audit validation failed:\n  - " + "\n  - ".join(failures))
+
+    if role_audit_df["caseid"].isna().any():
+        failures.append("role_audit_df has rows with null caseid")
+    if role_audit_df["drug_a"].isna().any():
+        failures.append("role_audit_df has rows with null drug_a")
+    if role_audit_df["drug_b"].isna().any():
+        failures.append("role_audit_df has rows with null drug_b")
+    if role_audit_df.duplicated(subset=["caseid", "drug_a", "drug_b"]).any():
+        failures.append("role_audit_df has duplicate (caseid, drug_a, drug_b) rows")
+
+    if role_audit_df["roles_a"].isna().any() or role_audit_df["roles_b"].isna().any():
+        failures.append("role_audit_df has rows where role metadata (roles_a/roles_b) could not be looked up")
+
+    pct_fields = [
+        "pct_cc_pairs", "pct_pairs_with_ge1_ps", "pct_pairs_with_ge1_ss",
+        "pct_pairs_with_ge1_i", "pct_pairs_with_ge1_ps_ss_or_i",
+    ]
+    for field in pct_fields:
+        value = diagnostics.get(field)
+        if value is not None and not (0.0 <= value <= 100.0):
+            failures.append(f"diagnostics[{field!r}] = {value} is outside the valid [0, 100] range")
+
+    if len(role_audit_df) != len(case_drug_pairs_df):
+        failures.append(
+            f"role_audit_df has {len(role_audit_df):,} rows, expected to match "
+            f"case_drug_pairs row count {len(case_drug_pairs_df):,}"
+        )
+
+    if failures:
+        raise AssertionError("Role-aware pair audit validation failed:\n  - " + "\n  - ".join(failures))
+
+    print("  All role-aware pair audit validation checks passed:")
+    print("    - role_audit_df has required columns")
+    print("    - no missing caseid / drug_a / drug_b")
+    print("    - no duplicate (caseid, drug_a, drug_b)")
+    print("    - role metadata (roles_a/roles_b) present for every pair")
+    print("    - all reported percentages are within [0, 100]")
+    print("    - role_audit_df row count matches case_drug_pairs row count")
+
+
+def save_drug_pair_role_audit_artifacts(
+    out_dir: str,
+    role_audit_df: pd.DataFrame,
+    diagnostics: dict,
+) -> None:
+    audit_path = os.path.join(out_dir, "case_drug_pair_role_audit.parquet")
+    role_audit_df.to_parquet(audit_path, index=False)
+    print(f"  Saved: {audit_path}  ({len(role_audit_df):,} rows)")
+
+    diagnostics_path = os.path.join(out_dir, "drug_pair_role_audit_diagnostics.json")
+    with open(diagnostics_path, "w", encoding="utf-8") as f:
+        json.dump(diagnostics, f, indent=2)
+    print(f"  Saved: {diagnostics_path}")
+
+
+# ---------------------------------------------------------------------------
+# Milestone 5d -- configurable pair-role filter (case_drug_pairs_selected.parquet)
+# ---------------------------------------------------------------------------
+
+PAIR_ROLE_FILTERS = ("all_pairs", "non_cc")
+DEFAULT_PAIR_ROLE_FILTER = "all_pairs"
+
+_SELECTED_PAIR_COLUMNS = [
+    "caseid", "drug_a", "drug_b", "n_mapped_drugs_in_case", "drug_id_mode",
+    "pair_role_filter", "drug_a_roles_seen", "drug_b_roles_seen",
+    "is_cc_pair", "has_ps", "has_ss", "has_i", "has_suspect_or_interacting",
+]
+
+
+def apply_pair_role_filter(
+    case_drug_pairs_df: pd.DataFrame,
+    case_drug_pair_role_audit_df: pd.DataFrame,
+    pair_role_filter: str,
+    drug_id_mode: str,
+) -> tuple:
+    """
+    Select which case_drug_pairs rows proceed to the (not-yet-implemented)
+    pair-reaction join, based on --pair-role-filter. Does NOT mutate or
+    overwrite case_drug_pairs.parquet -- this produces a new, separate
+    table (case_drug_pairs_selected.parquet), so the full unfiltered pair
+    set and its audit tables remain available.
+
+      'all_pairs' (default, backward-compatible/fully auditable): keep
+        every row from case_drug_pairs_df unchanged.
+      'non_cc' (recommended for the thesis comparison): drop pairs where
+        both drugs are only concomitant (C-C), i.e. keep pairs with >=1
+        PS/SS/I drug. Equivalent to case_drug_pair_role_audit_df's
+        has_suspect_or_interacting flag (see Milestone 5c, where "exclude
+        C-C" and "require >=1 PS/SS/I" were shown to produce identical
+        counts, since FAERS only has 4 role codes).
+
+    Role metadata (roles_seen per drug, is_cc_pair, has_ps/ss/i,
+    has_suspect_or_interacting) is carried into the selected output from
+    case_drug_pair_role_audit_df for downstream traceability -- so it's
+    still visible *why* a pair was selected/dropped without re-joining.
+
+    Returns (selected_df, diagnostics_dict).
+    """
+    if pair_role_filter not in PAIR_ROLE_FILTERS:
+        raise ValueError(f"pair_role_filter must be one of {PAIR_ROLE_FILTERS}, got {pair_role_filter!r}")
+
+    _require_columns(case_drug_pairs_df, ["caseid", "drug_a", "drug_b", "n_mapped_drugs_in_case"], "case_drug_pairs")
+    _require_columns(
+        case_drug_pair_role_audit_df,
+        ["caseid", "drug_a", "drug_b", "roles_a", "roles_b", "is_cc_pair",
+         "drug_a_has_ps", "drug_b_has_ps", "drug_a_has_ss", "drug_b_has_ss",
+         "drug_a_has_i", "drug_b_has_i", "has_suspect_or_interacting"],
+        "case_drug_pair_role_audit",
+    )
+
+    role_cols = case_drug_pair_role_audit_df[[
+        "caseid", "drug_a", "drug_b", "roles_a", "roles_b", "is_cc_pair",
+        "drug_a_has_ps", "drug_b_has_ps", "drug_a_has_ss", "drug_b_has_ss",
+        "drug_a_has_i", "drug_b_has_i", "has_suspect_or_interacting",
+    ]].rename(columns={"roles_a": "drug_a_roles_seen", "roles_b": "drug_b_roles_seen"})
+
+    merged = case_drug_pairs_df.merge(role_cols, on=["caseid", "drug_a", "drug_b"], how="left")
+    merged["has_ps"] = merged["drug_a_has_ps"] | merged["drug_b_has_ps"]
+    merged["has_ss"] = merged["drug_a_has_ss"] | merged["drug_b_has_ss"]
+    merged["has_i"] = merged["drug_a_has_i"] | merged["drug_b_has_i"]
+    merged["pair_role_filter"] = pair_role_filter
+    merged["drug_id_mode"] = drug_id_mode
+
+    if pair_role_filter == "all_pairs":
+        selected_df = merged
+    else:  # non_cc
+        selected_df = merged[~merged["is_cc_pair"]]
+
+    selected_df = selected_df[_SELECTED_PAIR_COLUMNS].reset_index(drop=True)
+
+    n_input = len(case_drug_pairs_df)
+    n_selected = len(selected_df)
+    n_removed = n_input - n_selected
+
+    def _pct(n: int) -> float:
+        return (n / n_input * 100.0) if n_input else 0.0
+
+    print(
+        f"  Pair-role filter '{pair_role_filter}': {n_selected:,} / {n_input:,} pairs selected "
+        f"({_pct(n_selected):.1f}%), {n_removed:,} removed ({_pct(n_removed):.1f}%)"
+    )
+
+    n_cases_before = int(case_drug_pairs_df["caseid"].nunique())
+    n_cases_after = int(selected_df["caseid"].nunique())
+    n_unique_pairs_before = int(case_drug_pairs_df[["drug_a", "drug_b"]].drop_duplicates().shape[0])
+    n_unique_pairs_after = int(selected_df[["drug_a", "drug_b"]].drop_duplicates().shape[0]) if n_selected else 0
+
+    def _high_polypharmacy_buckets(df: pd.DataFrame) -> dict:
+        return {
+            "rows_from_cases_ge10": int((df["n_mapped_drugs_in_case"] >= 10).sum()),
+            "rows_from_cases_ge20": int((df["n_mapped_drugs_in_case"] >= 20).sum()),
+            "rows_from_cases_ge50": int((df["n_mapped_drugs_in_case"] >= 50).sum()),
+            "rows_from_cases_ge100": int((df["n_mapped_drugs_in_case"] >= 100).sum()),
+        }
+
+    known_case_input = case_drug_pairs_df[case_drug_pairs_df["caseid"] == _KNOWN_AUDIT_CASEID]
+    known_case_selected = selected_df[selected_df["caseid"] == _KNOWN_AUDIT_CASEID]
+    known_case_summary = None
+    if len(known_case_input):
+        n_in = len(known_case_input)
+        n_sel = len(known_case_selected)
+        known_case_summary = {
+            "caseid": _KNOWN_AUDIT_CASEID,
+            "input_pairs": n_in,
+            "selected_pairs": n_sel,
+            "removed_pairs": n_in - n_sel,
+            "pct_selected": (n_sel / n_in * 100.0) if n_in else 0.0,
+            "pct_removed": ((n_in - n_sel) / n_in * 100.0) if n_in else 0.0,
+        }
+
+    diagnostics = {
+        "pair_role_filter": pair_role_filter,
+        "drug_id_mode": drug_id_mode,
+        "n_input_pairs": n_input,
+        "n_selected_pairs": n_selected,
+        "n_removed_pairs": n_removed,
+        "pct_selected_pairs": _pct(n_selected),
+        "pct_removed_pairs": _pct(n_removed),
+        "n_cases_before": n_cases_before,
+        "n_cases_after": n_cases_after,
+        "n_cases_lost_all_pairs_filtered": n_cases_before - n_cases_after,
+        "n_unique_drug_pairs_before": n_unique_pairs_before,
+        "n_unique_drug_pairs_after": n_unique_pairs_after,
+        "high_polypharmacy_contribution_before": _high_polypharmacy_buckets(case_drug_pairs_df),
+        "high_polypharmacy_contribution_after": (
+            _high_polypharmacy_buckets(selected_df) if n_selected
+            else {"rows_from_cases_ge10": 0, "rows_from_cases_ge20": 0, "rows_from_cases_ge50": 0, "rows_from_cases_ge100": 0}
+        ),
+        f"case_{_KNOWN_AUDIT_CASEID}_summary": known_case_summary,
+    }
+
+    return selected_df, diagnostics
+
+
+def print_pair_role_filter_diagnostics(diagnostics: dict) -> None:
+    d = diagnostics
+    print("\n  Pair-role filter diagnostics:")
+    print(f"    pair_role_filter:                      {d['pair_role_filter']}")
+    print(f"    drug_id_mode:                          {d['drug_id_mode']}")
+    print(f"    input pairs:                            {d['n_input_pairs']:,}")
+    print(f"    selected pairs:                         {d['n_selected_pairs']:,} ({d['pct_selected_pairs']:.2f}%)")
+    print(f"    removed pairs:                          {d['n_removed_pairs']:,} ({d['pct_removed_pairs']:.2f}%)")
+    print(f"    cases before:                            {d['n_cases_before']:,}")
+    print(f"    cases after:                             {d['n_cases_after']:,}")
+    print(f"    cases lost (all pairs filtered out):     {d['n_cases_lost_all_pairs_filtered']:,}")
+    print(f"    unique drug pairs before:                {d['n_unique_drug_pairs_before']:,}")
+    print(f"    unique drug pairs after:                 {d['n_unique_drug_pairs_after']:,}")
+    b, a = d["high_polypharmacy_contribution_before"], d["high_polypharmacy_contribution_after"]
+    print("    high-polypharmacy pair-row contribution (before -> after):")
+    for key, label in [
+        ("rows_from_cases_ge10", ">=10 mapped drugs"),
+        ("rows_from_cases_ge20", ">=20 mapped drugs"),
+        ("rows_from_cases_ge50", ">=50 mapped drugs"),
+        ("rows_from_cases_ge100", ">=100 mapped drugs"),
+    ]:
+        print(f"      {label:<20} {b[key]:>10,} -> {a[key]:>10,}")
+    known_key = f"case_{_KNOWN_AUDIT_CASEID}_summary"
+    if d.get(known_key):
+        k = d[known_key]
+        print(
+            f"    caseid {_KNOWN_AUDIT_CASEID}: input={k['input_pairs']:,}  selected={k['selected_pairs']:,} "
+            f"({k['pct_selected']:.1f}%)  removed={k['removed_pairs']:,} ({k['pct_removed']:.1f}%)"
+        )
+
+
+def run_pair_role_filter_validation(
+    case_drug_pairs_df: pd.DataFrame,
+    case_drug_pair_role_audit_df: pd.DataFrame,
+    selected_df: pd.DataFrame,
+    pair_role_filter: str,
+) -> None:
+    """
+    Validate case_drug_pairs_selected. Raises AssertionError listing every
+    failed check -- this table decides what actually reaches the
+    pair-reaction join, so a silent bug here (e.g. leaking a C-C pair
+    through in non_cc mode) would defeat the whole point of the filter.
+    """
+    failures = []
+
+    required_cols = [
+        "caseid", "drug_a", "drug_b", "n_mapped_drugs_in_case",
+        "drug_id_mode", "pair_role_filter",
+    ]
+    missing_cols = [c for c in required_cols if c not in selected_df.columns]
+    if missing_cols:
+        failures.append(f"selected_df is missing required column(s): {missing_cols}")
+        raise AssertionError("Pair-role filter validation failed:\n  - " + "\n  - ".join(failures))
+
+    if selected_df["caseid"].isna().any():
+        failures.append("selected_df has rows with null caseid")
+    if selected_df["drug_a"].isna().any():
+        failures.append("selected_df has rows with null drug_a")
+    if selected_df["drug_b"].isna().any():
+        failures.append("selected_df has rows with null drug_b")
+    if (selected_df["drug_a"] == selected_df["drug_b"]).any():
+        failures.append("selected_df has self-pairs (drug_a == drug_b)")
+    if selected_df.duplicated(subset=["caseid", "drug_a", "drug_b"]).any():
+        failures.append("selected_df has duplicate (caseid, drug_a, drug_b) rows")
+
+    original_pairs = set(map(tuple, case_drug_pairs_df[["caseid", "drug_a", "drug_b"]].itertuples(index=False, name=None)))
+    selected_pairs = set(map(tuple, selected_df[["caseid", "drug_a", "drug_b"]].itertuples(index=False, name=None)))
+    if not selected_pairs.issubset(original_pairs):
+        failures.append("selected_df contains a (caseid, drug_a, drug_b) not present in case_drug_pairs")
+
+    modes = set(selected_df["pair_role_filter"].dropna().unique())
+    if modes != {pair_role_filter}:
+        failures.append(
+            f"selected_df.pair_role_filter has value(s) {sorted(modes)}, expected only {pair_role_filter!r}"
+        )
+
+    if pair_role_filter == "all_pairs":
+        if len(selected_df) != len(case_drug_pairs_df):
+            failures.append(
+                f"all_pairs mode: selected_df has {len(selected_df):,} rows, "
+                f"expected to match case_drug_pairs row count {len(case_drug_pairs_df):,}"
+            )
+    else:  # non_cc
+        if "is_cc_pair" in selected_df.columns and selected_df["is_cc_pair"].any():
+            failures.append("non_cc mode: selected_df contains a pair classified as C-C (is_cc_pair)")
+        n_expected = int(case_drug_pair_role_audit_df["has_suspect_or_interacting"].sum())
+        if len(selected_df) != n_expected:
+            failures.append(
+                f"non_cc mode: selected_df has {len(selected_df):,} rows, expected "
+                f"{n_expected:,} (case_drug_pair_role_audit.has_suspect_or_interacting count)"
+            )
+
+    if failures:
+        raise AssertionError("Pair-role filter validation failed:\n  - " + "\n  - ".join(failures))
+
+    print("  All pair-role filter validation checks passed:")
+    print("    - selected_df has required columns")
+    print("    - no missing caseid / drug_a / drug_b")
+    print("    - no self-pairs")
+    print("    - no duplicate (caseid, drug_a, drug_b)")
+    print("    - every selected pair exists in case_drug_pairs")
+    print("    - pair_role_filter has exactly one value, matching the CLI flag")
+    if pair_role_filter == "all_pairs":
+        print("    - all_pairs mode: selected row count == case_drug_pairs row count")
+    else:
+        print("    - non_cc mode: no selected pair is classified as C-C")
+        print("    - non_cc mode: selected row count == role-audit has_suspect_or_interacting count")
+
+
+def save_pair_role_filter_artifacts(
+    out_dir: str,
+    selected_df: pd.DataFrame,
+    diagnostics: dict,
+) -> None:
+    selected_path = os.path.join(out_dir, "case_drug_pairs_selected.parquet")
+    selected_df.to_parquet(selected_path, index=False)
+    print(f"  Saved: {selected_path}  ({len(selected_df):,} rows)")
+
+    diagnostics_path = os.path.join(out_dir, "pair_role_filter_diagnostics.json")
+    with open(diagnostics_path, "w", encoding="utf-8") as f:
+        json.dump(diagnostics, f, indent=2)
+    print(f"  Saved: {diagnostics_path}")
 
 
 # ---------------------------------------------------------------------------
@@ -1337,10 +2431,12 @@ def main() -> None:
         description=(
             "Corrected case-level FAERS preprocessing pipeline (NEW). "
             "Resolves CASEID/CASEVERSION so each real-world case is counted "
-            "once, ahead of drug-only R-GCN construction. Milestone 4c: "
-            "builds case_drugs.parquet (one row per caseid, mapped_drug_id) "
-            "with a selectable --drug-id-mode -- see file docstring for "
-            "milestone status."
+            "once, ahead of drug-only R-GCN construction. Milestone 5d: "
+            "builds case_drug_pairs.parquet (untouched) plus audit-only "
+            "expected_pair_reaction_join_audit.parquet and "
+            "case_drug_pair_role_audit.parquet, plus a --pair-role-filter-"
+            "selected case_drug_pairs_selected.parquet (no join with "
+            "reactions yet) -- see file docstring for milestone status."
         )
     )
     input_group = parser.add_mutually_exclusive_group()
@@ -1395,6 +2491,18 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--pair-role-filter", choices=PAIR_ROLE_FILTERS, default=DEFAULT_PAIR_ROLE_FILTER,
+        help=(
+            "Which case_drug_pairs rows are written to "
+            "case_drug_pairs_selected.parquet (Milestone 5d); does not "
+            "modify case_drug_pairs.parquet itself. 'all_pairs' (default, "
+            "backward-compatible/fully auditable) keeps every pair. "
+            "'non_cc' (RECOMMENDED for the thesis comparison) drops "
+            "concomitant-concomitant (C-C) pairs, keeping only pairs with "
+            "at least one PS/SS/I drug."
+        ),
+    )
+    parser.add_argument(
         "--max-rows", type=int, default=None,
         help="Limit DEMO/DRUG/REAC tables to the first N rows each. Smoke-testing only.",
     )
@@ -1439,6 +2547,7 @@ def main() -> None:
     print(f"  Mapping file:    {args.mapping_file}")
     print(f"  Include fuzzy:   {args.include_fuzzy}")
     print(f"  Drug ID mode:    {args.drug_id_mode}" + ("  (recommended for R-GCN)" if args.drug_id_mode == "chembl_id" else ""))
+    print(f"  Pair role filter:{args.pair_role_filter}" + ("  (recommended for thesis comparison)" if args.pair_role_filter == "non_cc" else ""))
     print(f"  Output dir:      {args.out_dir}")
     if args.max_rows:
         print(f"  Max rows:        {args.max_rows:,}  (TEST MODE)")
@@ -1503,8 +2612,55 @@ def main() -> None:
         args.out_dir, case_drugs_long_df, case_drugs_df, drug_mapping_diagnostics, unmapped_drugs_top_df,
     )
 
-    print("\n--- Milestone 5 (pending): canonical drug-pair generation ---")
-    case_drug_pairs_df = build_case_drug_pairs(case_drugs_df)
+    print("\n--- Milestone 5: build case_drug_pairs ---")
+    case_drug_pairs_df, drug_pair_diagnostics, high_polypharmacy_df = build_case_drug_pairs(
+        case_drugs_df, args.drug_id_mode,
+    )
+    print_drug_pair_diagnostics(drug_pair_diagnostics)
+
+    print("\n--- Milestone 5: case_drug_pairs validation checks ---")
+    run_case_drug_pairs_validation(case_drugs_df, case_drug_pairs_df, args.drug_id_mode)
+
+    print("\n--- Milestone 5: saving case_drug_pairs artifacts ---")
+    save_case_drug_pairs_artifacts(
+        args.out_dir, case_drug_pairs_df, drug_pair_diagnostics, high_polypharmacy_df,
+    )
+
+    print("\n--- Milestone 5b: expected pair-reaction join-size audit ---")
+    join_audit_df, join_audit_diagnostics = build_expected_pair_reaction_join_audit(
+        case_drug_pairs_df, case_reactions_df,
+    )
+    print_expected_pair_reaction_join_diagnostics(join_audit_diagnostics)
+
+    print("\n--- Milestone 5b: join-size audit validation checks ---")
+    run_expected_pair_reaction_join_audit_validation(case_drug_pairs_df, case_reactions_df, join_audit_df)
+
+    print("\n--- Milestone 5b: saving join-size audit artifacts ---")
+    save_expected_pair_reaction_join_audit_artifacts(args.out_dir, join_audit_df, join_audit_diagnostics)
+
+    print("\n--- Milestone 5c: role-aware pair audit ---")
+    role_audit_df, role_audit_diagnostics = build_case_drug_pair_role_audit(
+        case_drug_pairs_df, case_drugs_df, args.drug_id_mode,
+    )
+    print_drug_pair_role_audit_diagnostics(role_audit_diagnostics)
+
+    print("\n--- Milestone 5c: role-aware pair audit validation checks ---")
+    run_drug_pair_role_audit_validation(case_drug_pairs_df, role_audit_df, role_audit_diagnostics)
+
+    print("\n--- Milestone 5c: saving role-aware pair audit artifacts ---")
+    save_drug_pair_role_audit_artifacts(args.out_dir, role_audit_df, role_audit_diagnostics)
+
+    print(f"\n--- Milestone 5d: apply pair-role filter (pair_role_filter={args.pair_role_filter}) ---")
+    selected_pairs_df, pair_filter_diagnostics = apply_pair_role_filter(
+        case_drug_pairs_df, role_audit_df, args.pair_role_filter, args.drug_id_mode,
+    )
+    print_pair_role_filter_diagnostics(pair_filter_diagnostics)
+
+    print("\n--- Milestone 5d: pair-role filter validation checks ---")
+    run_pair_role_filter_validation(case_drug_pairs_df, role_audit_df, selected_pairs_df, args.pair_role_filter)
+
+    print("\n--- Milestone 5d: saving pair-role filter artifacts ---")
+    save_pair_role_filter_artifacts(args.out_dir, selected_pairs_df, pair_filter_diagnostics)
 
     print("\n--- Milestone 6 (pending): drug_pair_reaction_counts aggregation ---")
     drug_pair_reaction_counts_df = build_drug_pair_reaction_counts(case_drug_pairs_df, case_reactions_df)
@@ -1519,11 +2675,13 @@ def main() -> None:
     )
 
     print("\n" + "=" * 60)
-    print("Milestone 4c complete: case_drugs.parquet built (one row per")
-    print(f"caseid, mapped_drug_id) using drug_id_mode={args.drug_id_mode!r}.")
-    print("No drug-pair generation or PRR was performed yet.")
+    print("Milestone 5d complete: case_drug_pairs.parquet built (unfiltered, untouched),")
+    print("plus audit-only expected_pair_reaction_join_audit.parquet and")
+    print("case_drug_pair_role_audit.parquet, plus case_drug_pairs_selected.parquet")
+    print(f"(drug_id_mode={args.drug_id_mode!r}, pair_role_filter={args.pair_role_filter!r}).")
+    print("Selected pairs were NOT joined with reactions; no PRR was performed yet.")
     print(f"Artifacts in: {args.out_dir}")
-    print("Next: implement Milestone 5 (canonical drug-pair generation).")
+    print("Next: implement Milestone 6 (drug_pair_reaction_counts aggregation).")
     print("=" * 60)
 
 
