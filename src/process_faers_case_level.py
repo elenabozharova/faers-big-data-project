@@ -26,8 +26,8 @@ Milestone status
   [x] Milestone 5 -- canonical (drug_a, drug_b) pair generation per case
   [x] Milestone 5b -- expected pair-reaction join-size audit (no join)
   [x] Milestone 5c -- role-aware pair audit (PS/SS/C/I, no filtering)
-  [x] Milestone 5d -- configurable pair-role filter (case_drug_pairs_selected)  (this file)
-  [ ] Milestone 6 -- drug_pair_reaction_counts aggregation (no PRR)
+  [x] Milestone 5d -- configurable pair-role filter (case_drug_pairs_selected)
+  [x] Milestone 6 -- case_pair_reactions + drug_pair_reaction_counts (no PRR)  (this file)
   [ ] Milestone 7 -- global validation checks / PRR
 
 Milestone 2 scope
@@ -121,27 +121,36 @@ untouched. No filtering is applied to case_drug_pairs.parquet itself --
 concomitant (C) drugs can still be clinically relevant, so this is
 reported as a what-if, not treated as automatically correct.
 
-Milestone 5d scope (this file)
--------------------------------
+Milestone 5d scope
+-------------------
 Adds --pair-role-filter {all_pairs, non_cc} and builds
-case_drug_pairs_selected.parquet: the actual set of pairs that would
-proceed to the (not-yet-implemented) pair-reaction join under the chosen
-filter, computed from case_drug_pairs.parquet + case_drug_pair_role_audit
-without ever mutating either. 'all_pairs' (default) keeps everything;
-'non_cc' (recommended for the thesis comparison) drops C-C pairs. This
-finally *acts* on the Milestone 5c sensitivity analysis, but only by
-producing a new selected-pairs table -- it does not delete/overwrite
-case_drug_pairs.parquet, and it still does not join with reactions.
+case_drug_pairs_selected.parquet: the actual set of pairs that proceed to
+the pair-reaction join under the chosen filter, computed from
+case_drug_pairs.parquet + case_drug_pair_role_audit without ever mutating
+either. 'all_pairs' (default) keeps everything; 'non_cc' (recommended for
+the thesis comparison) drops C-C pairs.
+
+Milestone 6 scope (this file)
+-------------------------------
+Builds case_pair_reactions.parquet (caseid's selected pair x that case's
+reactions, i.e. CO-REPORTING only -- the pair and the reaction were both
+reported in the same FAERS case; this is NOT a causal or mechanistic
+claim) and drug_pair_reaction_counts.parquet (n_cases = distinct caseid
+count per (drug_a, drug_b, reaction_pt), never a raw row count), plus
+min-support-filtered variants (n_cases >= 3/5/10). The join can be tens of
+millions of rows (measured ~41M for --max-rows 300000 --pair-role-filter
+non_cc), so it is computed and written in bounded-size chunks
+(build_case_pair_reactions_chunked) rather than as one in-memory pandas
+merge -- see that function's docstring for why this is still exact (not
+an approximation) despite never materializing the full table at once.
 Still explicitly out of scope:
-  - joining selected pairs with case_reactions (Milestone 6)
-  - pair-reaction support counts / PRR (Milestone 6/7)
-  - capping/filtering high-polypharmacy cases
+  - PRR / disproportionality statistics (Milestone 7)
   - R-GCN export, train/validation/test splitting
   - collapsing ChEMBL salt/form ids to a parent active ingredient
 
 This file does NOT:
   - implement full preprocessing
-  - join drug pairs with reactions
+  - claim or compute causality between a drug pair and a reaction
   - compute PRR (Proportional Reporting Ratio)
   - touch R-GCN, ChEMBL, STRING, or Decagon adjacency / training code
 
@@ -160,6 +169,8 @@ import re
 import sys
 
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -2366,22 +2377,549 @@ def save_pair_role_filter_artifacts(
 
 
 # ---------------------------------------------------------------------------
-# Milestone 6 (TODO) -- drug_pair_reaction_counts aggregation (no PRR yet)
+# Milestone 6 -- case_pair_reactions + drug_pair_reaction_counts (co-reporting
+# only; NOT causal, NOT PRR)
 # ---------------------------------------------------------------------------
+#
+# TODO (deferred, not addressed by this milestone):
+#   - PRR / disproportionality statistics are Milestone 7, not here -- n_cases
+#     is a raw co-reporting support count, nothing more
+#   - --pair-role-filter all_pairs vs non_cc changes which pairs feed this
+#     join (see Milestone 5d); this milestone does not pick one for you
+#   - R-GCN export and train/validation/test splitting are both still out of
+#     scope
 
-def build_drug_pair_reaction_counts(
-    case_drug_pairs_df: pd.DataFrame,
+# A case_pair_reactions row means: this (drug_a, drug_b) pair and this
+# reaction_pt were both reported within the SAME FAERS case. That is
+# co-reporting/co-occurrence evidence only -- it says nothing about which
+# drug (if either) caused the reaction, nor about mechanism. Do not read
+# "pair X is associated with reaction Y" as a causal statement anywhere
+# downstream of this table.
+
+_CASE_PAIR_REACTION_ROLE_COLUMNS = ["is_cc_pair", "has_ps", "has_ss", "has_i", "has_suspect_or_interacting"]
+_CASE_PAIR_REACTION_COLUMNS = (
+    ["caseid", "drug_a", "drug_b", "reaction_pt", "n_mapped_drugs_in_case", "drug_id_mode", "pair_role_filter"]
+    + _CASE_PAIR_REACTION_ROLE_COLUMNS
+)
+DEFAULT_MAX_ROWS_PER_JOIN_CHUNK = 2_000_000
+
+
+def _join_pairs_to_reactions(pairs_df: pd.DataFrame, reactions_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Pure join step, reused by both the simple (in-memory) and chunked
+    builders below: one row per (case's selected pair) x (case's reaction),
+    i.e. co-reporting only -- see module comment above.
+    """
+    reac_cols = reactions_df[["caseid", "reaction_pt"]]
+    merged = pairs_df.merge(reac_cols, on="caseid", how="inner")
+    for col in _CASE_PAIR_REACTION_ROLE_COLUMNS:
+        if col not in merged.columns:
+            merged[col] = pd.NA
+    return merged[_CASE_PAIR_REACTION_COLUMNS]
+
+
+def build_case_pair_reactions(
+    selected_pairs_df: pd.DataFrame,
     case_reactions_df: pd.DataFrame,
 ) -> pd.DataFrame:
     """
-    TODO (Milestone 6): Join case_drug_pairs with case_reactions on caseid and
-    count distinct cases per (drug_i, drug_j, pt). This is a count table only;
-    PRR / disproportionality statistics are explicitly out of scope here.
-    Output columns: drug_i, drug_j, pt, n_cases.
-    Saved later as drug_pair_reaction_counts.parquet.
+    Join case_drug_pairs_selected with case_reactions on caseid to produce
+    case_pair_reactions: co-reporting rows only (this pair and this reaction
+    appeared in the same case -- see module comment; NOT a causal claim).
+
+    Simple, single-pass, in-memory reference implementation -- safe for
+    small/medium inputs (e.g. the --max-rows 5000 smoke test). The real
+    pipeline uses build_case_pair_reactions_chunked() below instead, because
+    this join can produce tens of millions of rows (measured: ~41M rows for
+    the --max-rows 300000 --pair-role-filter non_cc run) which is not safe
+    to hold in memory as a single pandas DataFrame alongside everything else
+    already loaded.
     """
-    print("  [TODO] build_drug_pair_reaction_counts() not yet implemented (Milestone 6)")
-    return pd.DataFrame(columns=["drug_i", "drug_j", "pt", "n_cases"])
+    _require_columns(
+        selected_pairs_df,
+        ["caseid", "drug_a", "drug_b", "n_mapped_drugs_in_case", "drug_id_mode", "pair_role_filter"],
+        "case_drug_pairs_selected",
+    )
+    _require_columns(case_reactions_df, ["caseid", "reaction_pt"], "case_reactions")
+    return _join_pairs_to_reactions(selected_pairs_df, case_reactions_df).reset_index(drop=True)
+
+
+def build_drug_pair_reaction_counts(case_pair_reactions_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Aggregate case_pair_reactions to (drug_a, drug_b, reaction_pt) -> n_cases.
+
+    n_cases is the number of DISTINCT caseid values reporting that triple
+    (co-reporting support), computed via groupby(...)['caseid'].nunique() --
+    deliberately NOT groupby(...).size() / raw row count. In this pipeline
+    the two happen to be numerically identical for every triple, because a
+    single case can contribute at most one row per (drug_a, drug_b,
+    reaction_pt): case_drug_pairs_selected has at most one row per
+    (caseid, drug_a, drug_b) (Milestone 5) and case_reactions has at most
+    one row per (caseid, reaction_pt) (Milestone 4), so their per-case cross
+    product cannot duplicate a triple within one case. nunique() is used
+    anyway so the support count is correct *by definition*, not merely by
+    this dataset's current upstream guarantees.
+    """
+    _require_columns(
+        case_pair_reactions_df,
+        ["caseid", "drug_a", "drug_b", "reaction_pt", "drug_id_mode", "pair_role_filter"],
+        "case_pair_reactions",
+    )
+    counts = (
+        case_pair_reactions_df.groupby(["drug_a", "drug_b", "reaction_pt"])["caseid"]
+        .nunique()
+        .rename("n_cases")
+        .reset_index()
+    )
+    counts["drug_id_mode"] = case_pair_reactions_df["drug_id_mode"].iloc[0] if len(case_pair_reactions_df) else pd.NA
+    counts["pair_role_filter"] = (
+        case_pair_reactions_df["pair_role_filter"].iloc[0] if len(case_pair_reactions_df) else pd.NA
+    )
+    return counts[["drug_a", "drug_b", "reaction_pt", "n_cases", "drug_id_mode", "pair_role_filter"]]
+
+
+def _plan_caseid_chunks(case_stats_df: pd.DataFrame, max_rows_per_chunk: int) -> list:
+    """
+    Greedily bucket caseids (sorted for determinism) into chunks whose total
+    n_pair_reaction_rows_for_case stays <= max_rows_per_chunk, so each
+    chunk's join is bounded in size. A single case whose own row count
+    already exceeds max_rows_per_chunk gets its own chunk (its rows can't be
+    split further without breaking the "one case, one chunk" invariant the
+    distinct-caseid-count accumulation below relies on).
+    """
+    ordered = case_stats_df.sort_values("caseid")
+    chunks, current_chunk, current_rows = [], [], 0
+    for row in ordered.itertuples():
+        case_rows = int(row.n_pair_reaction_rows_for_case)
+        if current_chunk and current_rows + case_rows > max_rows_per_chunk:
+            chunks.append(current_chunk)
+            current_chunk, current_rows = [], 0
+        current_chunk.append(row.caseid)
+        current_rows += case_rows
+    if current_chunk:
+        chunks.append(current_chunk)
+    return chunks
+
+
+def build_case_pair_reactions_chunked(
+    selected_pairs_df: pd.DataFrame,
+    case_reactions_df: pd.DataFrame,
+    out_path: str,
+    drug_id_mode: str,
+    pair_role_filter: str,
+    max_rows_per_chunk: int = DEFAULT_MAX_ROWS_PER_JOIN_CHUNK,
+) -> tuple:
+    """
+    Memory-safe version of build_case_pair_reactions() +
+    build_drug_pair_reaction_counts(), combined into a single chunked pass:
+
+      1. Compute each case's exact contribution to the join up front
+         (n_pairs_for_case * n_reactions_for_case for cases present in both
+         inputs) -- cheap, one row per case, no join yet.
+      2. Partition caseids into batches bounded by max_rows_per_chunk
+         (_plan_caseid_chunks).
+      3. For each batch: join just that batch (same _join_pairs_to_reactions
+         logic as the simple builder), append its rows directly to out_path
+         via a streaming pyarrow ParquetWriter (case_pair_reactions.parquet
+         is never held in memory in full), and fold its per-triple row
+         counts into a running partial-counts accumulator.
+
+      Because batches partition caseids (each case's rows are produced by
+      exactly one batch) and a case contributes at most one row per triple
+      (see build_drug_pair_reaction_counts docstring), summing each batch's
+      per-triple counts across all batches gives the exact number of
+      DISTINCT caseids per triple -- equivalent to a single
+      groupby(...).nunique() over the full un-materialized table.
+
+      4. Also validates every batch inline (required columns, no missing
+         keys, no self-pairs, no duplicate (caseid, drug_a, drug_b,
+         reaction_pt), drug_id_mode/pair_role_filter constant, and in
+         non_cc mode no is_cc_pair rows) and accumulates a summary for
+         run_case_pair_reactions_validation() -- raises immediately on the
+         first batch that fails, same "fail loudly" convention as the rest
+         of this file.
+
+    Returns (n_total_rows, counts_df, case_stats_df, row_validation_summary).
+    """
+    _require_columns(
+        selected_pairs_df,
+        ["caseid", "drug_a", "drug_b", "n_mapped_drugs_in_case", "drug_id_mode", "pair_role_filter"],
+        "case_drug_pairs_selected",
+    )
+    _require_columns(case_reactions_df, ["caseid", "reaction_pt"], "case_reactions")
+
+    pairs_n = selected_pairs_df.groupby("caseid").size().rename("n_pairs_for_case")
+    pairs_mapped = selected_pairs_df.groupby("caseid")["n_mapped_drugs_in_case"].first()
+    reac_n = case_reactions_df.groupby("caseid").size().rename("n_reactions_for_case")
+
+    case_stats_df = (
+        pd.DataFrame({"n_pairs_for_case": pairs_n})
+        .join(pd.DataFrame({"n_mapped_drugs_in_case": pairs_mapped}))
+        .join(pd.DataFrame({"n_reactions_for_case": reac_n}), how="inner")  # inner: only cases with both
+        .reset_index()
+    )
+    case_stats_df["n_pair_reaction_rows_for_case"] = (
+        case_stats_df["n_pairs_for_case"].astype("int64") * case_stats_df["n_reactions_for_case"].astype("int64")
+    )
+
+    chunks = _plan_caseid_chunks(case_stats_df, max_rows_per_chunk)
+    print(f"  Joining case_drug_pairs_selected x case_reactions in {len(chunks):,} chunk(s) (cap {max_rows_per_chunk:,} rows/chunk)...")
+
+    schema = pa.schema([
+        ("caseid", pa.string()), ("drug_a", pa.string()), ("drug_b", pa.string()),
+        ("reaction_pt", pa.string()), ("n_mapped_drugs_in_case", pa.int64()),
+        ("drug_id_mode", pa.string()), ("pair_role_filter", pa.string()),
+        ("is_cc_pair", pa.bool_()), ("has_ps", pa.bool_()), ("has_ss", pa.bool_()),
+        ("has_i", pa.bool_()), ("has_suspect_or_interacting", pa.bool_()),
+    ])
+
+    total_rows = 0
+    partial_counts = []
+    row_validation = {
+        "n_missing_caseid": 0, "n_missing_drug_a": 0, "n_missing_drug_b": 0,
+        "n_missing_reaction_pt": 0, "n_self_pairs": 0, "n_duplicate_keys": 0,
+        "n_cc_pairs_seen_in_non_cc_mode": 0, "drug_id_modes_seen": set(), "pair_role_filters_seen": set(),
+    }
+
+    with pq.ParquetWriter(out_path, schema) as writer:
+        for chunk_caseids in chunks:
+            caseid_set = set(chunk_caseids)
+            pairs_subset = selected_pairs_df[selected_pairs_df["caseid"].isin(caseid_set)]
+            reac_subset = case_reactions_df[case_reactions_df["caseid"].isin(caseid_set)]
+            chunk_df = _join_pairs_to_reactions(pairs_subset, reac_subset)
+
+            row_validation["n_missing_caseid"] += int(chunk_df["caseid"].isna().sum())
+            row_validation["n_missing_drug_a"] += int(chunk_df["drug_a"].isna().sum())
+            row_validation["n_missing_drug_b"] += int(chunk_df["drug_b"].isna().sum())
+            row_validation["n_missing_reaction_pt"] += int(chunk_df["reaction_pt"].isna().sum())
+            row_validation["n_self_pairs"] += int((chunk_df["drug_a"] == chunk_df["drug_b"]).sum())
+            row_validation["n_duplicate_keys"] += int(
+                chunk_df.duplicated(subset=["caseid", "drug_a", "drug_b", "reaction_pt"]).sum()
+            )
+            if "is_cc_pair" in chunk_df.columns:
+                row_validation["n_cc_pairs_seen_in_non_cc_mode"] += (
+                    int(chunk_df["is_cc_pair"].fillna(False).astype(bool).sum()) if pair_role_filter == "non_cc" else 0
+                )
+            row_validation["drug_id_modes_seen"] |= set(chunk_df["drug_id_mode"].dropna().unique())
+            row_validation["pair_role_filters_seen"] |= set(chunk_df["pair_role_filter"].dropna().unique())
+
+            chunk_df["is_cc_pair"] = chunk_df["is_cc_pair"].astype("boolean")
+            chunk_df["has_ps"] = chunk_df["has_ps"].astype("boolean")
+            chunk_df["has_ss"] = chunk_df["has_ss"].astype("boolean")
+            chunk_df["has_i"] = chunk_df["has_i"].astype("boolean")
+            chunk_df["has_suspect_or_interacting"] = chunk_df["has_suspect_or_interacting"].astype("boolean")
+
+            table = pa.Table.from_pandas(chunk_df, schema=schema, preserve_index=False)
+            writer.write_table(table)
+
+            total_rows += len(chunk_df)
+            partial_counts.append(
+                chunk_df.groupby(["drug_a", "drug_b", "reaction_pt"]).size().rename("n_cases_partial").reset_index()
+            )
+
+    if partial_counts:
+        all_partial = pd.concat(partial_counts, ignore_index=True)
+        counts_df = (
+            all_partial.groupby(["drug_a", "drug_b", "reaction_pt"])["n_cases_partial"]
+            .sum()
+            .rename("n_cases")
+            .reset_index()
+        )
+    else:
+        counts_df = pd.DataFrame(columns=["drug_a", "drug_b", "reaction_pt", "n_cases"])
+    counts_df["drug_id_mode"] = drug_id_mode
+    counts_df["pair_role_filter"] = pair_role_filter
+    counts_df = counts_df[["drug_a", "drug_b", "reaction_pt", "n_cases", "drug_id_mode", "pair_role_filter"]]
+
+    print(f"  case_pair_reactions: {total_rows:,} rows written to {out_path}")
+    print(f"  drug_pair_reaction_counts: {len(counts_df):,} unique (drug_a, drug_b, reaction_pt) triples")
+
+    return total_rows, counts_df, case_stats_df, row_validation
+
+
+def compute_pair_reaction_diagnostics(
+    selected_pairs_df: pd.DataFrame,
+    case_reactions_df: pd.DataFrame,
+    total_rows: int,
+    counts_df: pd.DataFrame,
+    case_stats_df: pd.DataFrame,
+    drug_id_mode: str,
+    pair_role_filter: str,
+) -> dict:
+    n_cases_with_pairs = int(selected_pairs_df["caseid"].nunique())
+    n_cases_with_reactions = int(case_reactions_df["caseid"].nunique())
+    n_cases_with_both = int(len(case_stats_df))
+
+    n_cases = counts_df["n_cases"]
+    top_20 = counts_df.sort_values("n_cases", ascending=False).head(20)
+    top_20_triples = [
+        {
+            "drug_a": row["drug_a"], "drug_b": row["drug_b"], "reaction_pt": row["reaction_pt"],
+            "n_cases": int(row["n_cases"]),
+        }
+        for _, row in top_20.iterrows()
+    ]
+
+    def _bucket_contribution(min_drugs: int) -> dict:
+        rows = int(
+            case_stats_df.loc[case_stats_df["n_mapped_drugs_in_case"] >= min_drugs, "n_pair_reaction_rows_for_case"].sum()
+        )
+        pct = (rows / total_rows * 100.0) if total_rows else 0.0
+        return {"rows": rows, "pct": pct}
+
+    sorted_cases = case_stats_df.sort_values("n_pair_reaction_rows_for_case", ascending=False)
+
+    def _top_n_contribution(n: int) -> dict:
+        rows = int(sorted_cases["n_pair_reaction_rows_for_case"].head(n).sum())
+        pct = (rows / total_rows * 100.0) if total_rows else 0.0
+        return {"rows": rows, "pct": pct}
+
+    known_row = case_stats_df[case_stats_df["caseid"] == _KNOWN_AUDIT_CASEID]
+    known_summary = None
+    if len(known_row):
+        r = known_row.iloc[0]
+        known_summary = {
+            "caseid": _KNOWN_AUDIT_CASEID,
+            "selected_pairs": int(r["n_pairs_for_case"]),
+            "reactions": int(r["n_reactions_for_case"]),
+            "generated_pair_reaction_rows": int(r["n_pair_reaction_rows_for_case"]),
+        }
+
+    return {
+        "drug_id_mode": drug_id_mode,
+        "pair_role_filter": pair_role_filter,
+        "n_selected_pair_rows": int(len(selected_pairs_df)),
+        "n_case_reaction_rows": int(len(case_reactions_df)),
+        "n_cases_with_selected_pairs": n_cases_with_pairs,
+        "n_cases_with_reactions": n_cases_with_reactions,
+        "n_cases_with_both_pairs_and_reactions": n_cases_with_both,
+        "n_case_pair_reaction_rows": int(total_rows),
+        "n_unique_drug_pairs": int(counts_df[["drug_a", "drug_b"]].drop_duplicates().shape[0]),
+        "n_unique_reaction_pt": int(counts_df["reaction_pt"].nunique()),
+        "n_unique_triples": int(len(counts_df)),
+        "n_cases_min": int(n_cases.min()) if len(n_cases) else None,
+        "n_cases_median": float(n_cases.median()) if len(n_cases) else None,
+        "n_cases_max": int(n_cases.max()) if len(n_cases) else None,
+        "n_triples_with_n_cases_ge3": int((n_cases >= 3).sum()),
+        "n_triples_with_n_cases_ge5": int((n_cases >= 5).sum()),
+        "n_triples_with_n_cases_ge10": int((n_cases >= 10).sum()),
+        "top_20_triples_by_n_cases": top_20_triples,
+        "contribution_from_cases_with_mapped_drugs_ge10": _bucket_contribution(10),
+        "contribution_from_cases_with_mapped_drugs_ge20": _bucket_contribution(20),
+        "contribution_from_cases_with_mapped_drugs_ge50": _bucket_contribution(50),
+        "contribution_from_cases_with_mapped_drugs_ge100": _bucket_contribution(100),
+        "contribution_from_top_1_case": _top_n_contribution(1),
+        "contribution_from_top_10_cases": _top_n_contribution(10),
+        "contribution_from_top_100_cases": _top_n_contribution(100),
+        f"case_{_KNOWN_AUDIT_CASEID}_summary": known_summary,
+    }
+
+
+def print_pair_reaction_diagnostics(diagnostics: dict) -> None:
+    d = diagnostics
+    print("\n  Pair-reaction count diagnostics:")
+    print(f"    drug_id_mode:                          {d['drug_id_mode']}")
+    print(f"    pair_role_filter:                      {d['pair_role_filter']}")
+    print(f"    selected pair rows (input):             {d['n_selected_pair_rows']:,}")
+    print(f"    case reaction rows (input):             {d['n_case_reaction_rows']:,}")
+    print(f"    cases with selected pairs:              {d['n_cases_with_selected_pairs']:,}")
+    print(f"    cases with reactions:                   {d['n_cases_with_reactions']:,}")
+    print(f"    cases with both:                        {d['n_cases_with_both_pairs_and_reactions']:,}")
+    print(f"    case_pair_reactions rows:               {d['n_case_pair_reaction_rows']:,}")
+    print(f"    unique drug pairs:                      {d['n_unique_drug_pairs']:,}")
+    print(f"    unique reaction_pt:                     {d['n_unique_reaction_pt']:,}")
+    print(f"    unique (drug_a, drug_b, reaction_pt):   {d['n_unique_triples']:,}")
+    print(f"    n_cases min/median/max:                 {d['n_cases_min']} / {d['n_cases_median']} / {d['n_cases_max']}")
+    print(f"    triples with n_cases >= 3:              {d['n_triples_with_n_cases_ge3']:,}")
+    print(f"    triples with n_cases >= 5:              {d['n_triples_with_n_cases_ge5']:,}")
+    print(f"    triples with n_cases >= 10:             {d['n_triples_with_n_cases_ge10']:,}")
+    print("    high-polypharmacy contribution to case_pair_reaction rows:")
+    for key, label in [
+        ("contribution_from_cases_with_mapped_drugs_ge10", ">=10 mapped drugs"),
+        ("contribution_from_cases_with_mapped_drugs_ge20", ">=20 mapped drugs"),
+        ("contribution_from_cases_with_mapped_drugs_ge50", ">=50 mapped drugs"),
+        ("contribution_from_cases_with_mapped_drugs_ge100", ">=100 mapped drugs"),
+    ]:
+        c = d[key]
+        print(f"      {label:<20} {c['rows']:>12,} rows ({c['pct']:.2f}%)")
+    print("    contribution from top-N cases by generated rows:")
+    for key, label in [
+        ("contribution_from_top_1_case", "top 1 case"),
+        ("contribution_from_top_10_cases", "top 10 cases"),
+        ("contribution_from_top_100_cases", "top 100 cases"),
+    ]:
+        c = d[key]
+        print(f"      {label:<15} {c['rows']:>12,} rows ({c['pct']:.2f}%)")
+    known_key = f"case_{_KNOWN_AUDIT_CASEID}_summary"
+    if d.get(known_key):
+        k = d[known_key]
+        print(
+            f"    caseid {_KNOWN_AUDIT_CASEID}: selected_pairs={k['selected_pairs']:,}  "
+            f"reactions={k['reactions']:,}  generated_rows={k['generated_pair_reaction_rows']:,}"
+        )
+    print("    top 20 triples by n_cases:")
+    for row in d["top_20_triples_by_n_cases"]:
+        print(f"      {row['drug_a']:<16} {row['drug_b']:<16} {row['reaction_pt']:<35} n_cases={row['n_cases']:,}")
+
+
+def run_case_pair_reactions_validation(
+    row_validation_summary: dict,
+    pair_role_filter: str,
+    drug_id_mode: str,
+) -> None:
+    """
+    Validate case_pair_reactions from the per-chunk summary accumulated by
+    build_case_pair_reactions_chunked() (the full table is never
+    materialized, so checks run incrementally per chunk and are summarized
+    here). Raises AssertionError listing every failed check.
+    """
+    failures = []
+    s = row_validation_summary
+
+    if s["n_missing_caseid"]:
+        failures.append(f"{s['n_missing_caseid']:,} case_pair_reactions rows have null caseid")
+    if s["n_missing_drug_a"]:
+        failures.append(f"{s['n_missing_drug_a']:,} case_pair_reactions rows have null drug_a")
+    if s["n_missing_drug_b"]:
+        failures.append(f"{s['n_missing_drug_b']:,} case_pair_reactions rows have null drug_b")
+    if s["n_missing_reaction_pt"]:
+        failures.append(f"{s['n_missing_reaction_pt']:,} case_pair_reactions rows have null reaction_pt")
+    if s["n_self_pairs"]:
+        failures.append(f"{s['n_self_pairs']:,} case_pair_reactions rows are self-pairs (drug_a == drug_b)")
+    if s["n_duplicate_keys"]:
+        failures.append(f"{s['n_duplicate_keys']:,} duplicate (caseid, drug_a, drug_b, reaction_pt) rows found")
+    if s["drug_id_modes_seen"] and s["drug_id_modes_seen"] != {drug_id_mode}:
+        failures.append(f"case_pair_reactions.drug_id_mode has value(s) {sorted(s['drug_id_modes_seen'])}, expected only {drug_id_mode!r}")
+    if s["pair_role_filters_seen"] and s["pair_role_filters_seen"] != {pair_role_filter}:
+        failures.append(f"case_pair_reactions.pair_role_filter has value(s) {sorted(s['pair_role_filters_seen'])}, expected only {pair_role_filter!r}")
+    if pair_role_filter == "non_cc" and s["n_cc_pairs_seen_in_non_cc_mode"]:
+        failures.append(f"non_cc mode: {s['n_cc_pairs_seen_in_non_cc_mode']:,} case_pair_reactions rows are C-C pairs")
+
+    if failures:
+        raise AssertionError("case_pair_reactions validation failed:\n  - " + "\n  - ".join(failures))
+
+    print("  All case_pair_reactions validation checks passed (accumulated across all join chunks):")
+    print("    - required columns present in every chunk (caseid, drug_a, drug_b, reaction_pt, ...)")
+    print("    - no missing caseid / drug_a / drug_b / reaction_pt")
+    print("    - no self-pairs")
+    print("    - no duplicate (caseid, drug_a, drug_b, reaction_pt)")
+    print("    - every caseid present in both case_drug_pairs_selected and case_reactions (by construction)")
+    print("    - drug_id_mode consistent across all rows")
+    print("    - pair_role_filter consistent across all rows")
+    if pair_role_filter == "non_cc":
+        print("    - non_cc mode: no row is classified as a C-C pair")
+
+
+def run_drug_pair_reaction_counts_validation(
+    counts_df: pd.DataFrame,
+    case_pair_reactions_path: str,
+    sample_size: int = 20,
+) -> None:
+    """
+    Validate drug_pair_reaction_counts. Raises AssertionError listing every
+    failed check. Includes a deterministic cross-check: re-reads the actual
+    saved case_pair_reactions.parquet (via pyarrow predicate pushdown, so
+    only matching rows are scanned/loaded) for a fixed sample of triples and
+    confirms n_cases == that sample's case_pair_reactions.groupby(...)
+    ['caseid'].nunique() -- an independent check on the chunked map-reduce
+    aggregation used to build counts_df.
+    """
+    failures = []
+
+    required_cols = ["drug_a", "drug_b", "reaction_pt", "n_cases", "drug_id_mode", "pair_role_filter"]
+    missing_cols = [c for c in required_cols if c not in counts_df.columns]
+    if missing_cols:
+        failures.append(f"counts_df is missing required column(s): {missing_cols}")
+        raise AssertionError("drug_pair_reaction_counts validation failed:\n  - " + "\n  - ".join(failures))
+
+    if counts_df["drug_a"].isna().any():
+        failures.append("counts_df has rows with null drug_a")
+    if counts_df["drug_b"].isna().any():
+        failures.append("counts_df has rows with null drug_b")
+    if counts_df["reaction_pt"].isna().any():
+        failures.append("counts_df has rows with null reaction_pt")
+    if counts_df.duplicated(subset=["drug_a", "drug_b", "reaction_pt"]).any():
+        failures.append("counts_df has duplicate (drug_a, drug_b, reaction_pt) rows")
+    if (counts_df["n_cases"] <= 0).any():
+        failures.append("counts_df has rows with n_cases <= 0 (support count must be positive)")
+
+    # Deterministic sample: top 20 by n_cases (highest-support triples --
+    # the ones most likely to matter downstream, and the ones a chunking
+    # bug would most plausibly get wrong since they're aggregated from the
+    # most chunks/cases).
+    sample = counts_df.sort_values(
+        ["n_cases", "drug_a", "drug_b", "reaction_pt"], ascending=[False, True, True, True]
+    ).head(sample_size)
+
+    if len(sample) and os.path.exists(case_pair_reactions_path):
+        filters = [
+            [("drug_a", "==", row["drug_a"]), ("drug_b", "==", row["drug_b"]), ("reaction_pt", "==", row["reaction_pt"])]
+            for _, row in sample.iterrows()
+        ]
+        actual = pd.read_parquet(
+            case_pair_reactions_path, columns=["caseid", "drug_a", "drug_b", "reaction_pt"], filters=filters,
+        )
+        actual_nunique = (
+            actual.groupby(["drug_a", "drug_b", "reaction_pt"])["caseid"].nunique().rename("n_cases_actual")
+        )
+        actual_rowcount = (
+            actual.groupby(["drug_a", "drug_b", "reaction_pt"]).size().rename("n_rows_actual")
+        )
+        check = sample.set_index(["drug_a", "drug_b", "reaction_pt"]).join(actual_nunique).join(actual_rowcount)
+        mismatched = check[check["n_cases"] != check["n_cases_actual"]]
+        if len(mismatched):
+            failures.append(
+                f"{len(mismatched):,} sampled triples have counts_df.n_cases != re-read "
+                f"case_pair_reactions.groupby(...).caseid.nunique() (sample: {mismatched.index[:3].tolist()})"
+            )
+        # By construction (see build_drug_pair_reaction_counts docstring) raw row
+        # count and distinct-caseid count coincide in this dataset; confirmed here
+        # rather than assumed, but n_cases itself is always the nunique() value.
+        row_vs_nunique_mismatch = check[check["n_rows_actual"] != check["n_cases_actual"]]
+        if len(row_vs_nunique_mismatch):
+            print(
+                f"    [NOTE] {len(row_vs_nunique_mismatch):,} sampled triples have raw row count != "
+                f"distinct caseid count -- a case is contributing >1 row to the same triple; "
+                f"n_cases (nunique-based) remains correct, this is just informational"
+            )
+
+    if failures:
+        raise AssertionError("drug_pair_reaction_counts validation failed:\n  - " + "\n  - ".join(failures))
+
+    print("  All drug_pair_reaction_counts validation checks passed:")
+    print("    - required columns present")
+    print("    - no missing drug_a / drug_b / reaction_pt")
+    print("    - no duplicate (drug_a, drug_b, reaction_pt)")
+    print("    - n_cases > 0 for every triple")
+    print(f"    - {len(sample):,} sampled triples' n_cases verified against a fresh, filtered re-read of "
+          f"case_pair_reactions.parquet (groupby(...).caseid.nunique(), not raw row count)")
+
+
+def save_pair_reaction_artifacts(
+    out_dir: str,
+    counts_df: pd.DataFrame,
+    diagnostics: dict,
+) -> None:
+    """
+    case_pair_reactions.parquet is already written incrementally by
+    build_case_pair_reactions_chunked() -- this only saves the (much
+    smaller) aggregated counts table, its minimum-support filtered
+    variants, and the diagnostics.
+    """
+    counts_path = os.path.join(out_dir, "drug_pair_reaction_counts.parquet")
+    counts_df.to_parquet(counts_path, index=False)
+    print(f"  Saved: {counts_path}  ({len(counts_df):,} rows)")
+
+    for min_support in (3, 5, 10):
+        filtered = counts_df[counts_df["n_cases"] >= min_support]
+        filtered_path = os.path.join(out_dir, f"drug_pair_reaction_counts_min{min_support}.parquet")
+        filtered.to_parquet(filtered_path, index=False)
+        print(f"  Saved: {filtered_path}  ({len(filtered):,} rows, n_cases >= {min_support})")
+
+    diagnostics_path = os.path.join(out_dir, "pair_reaction_count_diagnostics.json")
+    with open(diagnostics_path, "w", encoding="utf-8") as f:
+        json.dump(diagnostics, f, indent=2)
+    print(f"  Saved: {diagnostics_path}")
 
 
 # ---------------------------------------------------------------------------
@@ -2431,12 +2969,11 @@ def main() -> None:
         description=(
             "Corrected case-level FAERS preprocessing pipeline (NEW). "
             "Resolves CASEID/CASEVERSION so each real-world case is counted "
-            "once, ahead of drug-only R-GCN construction. Milestone 5d: "
-            "builds case_drug_pairs.parquet (untouched) plus audit-only "
-            "expected_pair_reaction_join_audit.parquet and "
-            "case_drug_pair_role_audit.parquet, plus a --pair-role-filter-"
-            "selected case_drug_pairs_selected.parquet (no join with "
-            "reactions yet) -- see file docstring for milestone status."
+            "once, ahead of drug-only R-GCN construction. Milestone 6: "
+            "builds case_pair_reactions.parquet and "
+            "drug_pair_reaction_counts.parquet (co-reporting counts only, "
+            "NOT PRR/causal) from --pair-role-filter-selected pairs -- see "
+            "file docstring for milestone status."
         )
     )
     input_group = parser.add_mutually_exclusive_group()
@@ -2500,6 +3037,16 @@ def main() -> None:
             "'non_cc' (RECOMMENDED for the thesis comparison) drops "
             "concomitant-concomitant (C-C) pairs, keeping only pairs with "
             "at least one PS/SS/I drug."
+        ),
+    )
+    parser.add_argument(
+        "--max-rows-per-join-chunk", type=int, default=DEFAULT_MAX_ROWS_PER_JOIN_CHUNK,
+        help=(
+            "Milestone 6: caps how many case_pair_reactions rows any single "
+            "case_drug_pairs_selected x case_reactions join batch may "
+            f"produce, so the full join (measured: ~41M rows on the "
+            f"--max-rows 300000 --pair-role-filter non_cc run) is never held "
+            f"in memory at once. Default: {DEFAULT_MAX_ROWS_PER_JOIN_CHUNK:,}."
         ),
     )
     parser.add_argument(
@@ -2662,26 +3209,43 @@ def main() -> None:
     print("\n--- Milestone 5d: saving pair-role filter artifacts ---")
     save_pair_role_filter_artifacts(args.out_dir, selected_pairs_df, pair_filter_diagnostics)
 
-    print("\n--- Milestone 6 (pending): drug_pair_reaction_counts aggregation ---")
-    drug_pair_reaction_counts_df = build_drug_pair_reaction_counts(case_drug_pairs_df, case_reactions_df)
+    print(f"\n--- Milestone 6: build case_pair_reactions (co-reporting only, chunked) ---")
+    case_pair_reactions_path = os.path.join(args.out_dir, "case_pair_reactions.parquet")
+    n_pair_reaction_rows, drug_pair_reaction_counts_df, pair_reaction_case_stats_df, row_validation_summary = (
+        build_case_pair_reactions_chunked(
+            selected_pairs_df, case_reactions_df, case_pair_reactions_path,
+            args.drug_id_mode, args.pair_role_filter,
+            max_rows_per_chunk=args.max_rows_per_join_chunk,
+        )
+    )
+
+    print("\n--- Milestone 6: case_pair_reactions validation checks ---")
+    run_case_pair_reactions_validation(row_validation_summary, args.pair_role_filter, args.drug_id_mode)
+
+    print("\n--- Milestone 6: pair-reaction diagnostics ---")
+    pair_reaction_diagnostics = compute_pair_reaction_diagnostics(
+        selected_pairs_df, case_reactions_df, n_pair_reaction_rows, drug_pair_reaction_counts_df,
+        pair_reaction_case_stats_df, args.drug_id_mode, args.pair_role_filter,
+    )
+    print_pair_reaction_diagnostics(pair_reaction_diagnostics)
+
+    print("\n--- Milestone 6: drug_pair_reaction_counts validation checks ---")
+    run_drug_pair_reaction_counts_validation(drug_pair_reaction_counts_df, case_pair_reactions_path)
+
+    print("\n--- Milestone 6: saving drug_pair_reaction_counts artifacts ---")
+    save_pair_reaction_artifacts(args.out_dir, drug_pair_reaction_counts_df, pair_reaction_diagnostics)
 
     print("\n--- Milestone 7 (pending): global validation checks ---")
     run_validation_checks(demo_df, retained_cases_df, case_reactions_df, case_drugs_df)
 
-    print("\n--- Save (pending): case-level artifacts ---")
-    save_case_level_artifacts(
-        args.out_dir, case_reactions_df, case_drugs_df,
-        case_drug_pairs_df, drug_pair_reaction_counts_df,
-    )
-
     print("\n" + "=" * 60)
-    print("Milestone 5d complete: case_drug_pairs.parquet built (unfiltered, untouched),")
-    print("plus audit-only expected_pair_reaction_join_audit.parquet and")
-    print("case_drug_pair_role_audit.parquet, plus case_drug_pairs_selected.parquet")
+    print("Milestone 6 complete: case_pair_reactions.parquet and drug_pair_reaction_counts.parquet")
+    print("(+ min3/min5/min10 support-filtered variants) built from case_drug_pairs_selected.parquet")
     print(f"(drug_id_mode={args.drug_id_mode!r}, pair_role_filter={args.pair_role_filter!r}).")
-    print("Selected pairs were NOT joined with reactions; no PRR was performed yet.")
+    print("These are CO-REPORTING counts only -- not PRR, not causal. No R-GCN")
+    print("export or train/validation/test split was performed yet.")
     print(f"Artifacts in: {args.out_dir}")
-    print("Next: implement Milestone 6 (drug_pair_reaction_counts aggregation).")
+    print("Next: implement Milestone 7 (PRR / disproportionality statistics).")
     print("=" * 60)
 
 
