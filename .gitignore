@@ -1,7 +1,12 @@
 # ---------------------------------------------------------------------------
 # Data — download and generate locally; never commit raw or processed data
 # ---------------------------------------------------------------------------
-data/
+data/raw/
+data/interim/
+data/processed/
+data/gold/
+*.zip
+*.parquet
 
 # ---------------------------------------------------------------------------
 # Environment — local credentials and path overrides

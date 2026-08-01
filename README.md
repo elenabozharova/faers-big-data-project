@@ -60,6 +60,41 @@ pip install -r requirements.txt
 
 Raw and processed data are excluded from Git.
 
+## Milestone 2: reproducible FAERS acquisition
+
+Official quarterly ASCII archive URLs and required members are declared in
+the tracked `config/faers_sources.csv` manifest. Local attempts and checksums
+are appended to the untracked provenance log at
+`data/interim/acquisition/faers_download_log.csv`.
+
+```powershell
+# Pilot download
+python src/download_faers.py --years 2024 --quarters 1
+
+# One full year
+python src/download_faers.py --years 2024
+
+# Three-year pilot
+python src/download_faers.py --years 2023 2024 2025
+
+# Verify existing files without network requests
+python src/download_faers.py --years 2023 2024 2025 --verify-only
+
+# Validate and show intended actions without writing anything
+python src/download_faers.py --years 2024 --dry-run
+```
+
+Downloads stream to a same-directory `.part` file, validate as ZIPs (including
+CRC and required DEMO/DRUG/REAC members), and are atomically installed only
+after all checks pass. Repeated normal runs validate and skip an unchanged
+archive. A checksum differing from the latest successful local log entry is a
+failure; `--overwrite` deliberately downloads a replacement while preserving
+the current archive unless the replacement passes validation. Raw archives,
+partial downloads, runtime logs, and generated data are not committed.
+
+The 2012 data remains a later compatibility stage: Q1-Q3 use legacy AERS
+files, and Q3 is a partial quarter.
+
 ## Current status
 
 Implemented:
