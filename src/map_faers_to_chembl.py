@@ -34,7 +34,8 @@ Usage
   PGPASSWORD=secret python src/map_faers_to_chembl.py --max-rows 50000   # test mode
   PGPASSWORD=secret python src/map_faers_to_chembl.py --force-rebuild-index
 
-Run AFTER process_string.py and process_chembl.py (ChEMBL DB must be up).
+Prerequisites: FAERS DRUG data, normalize_drug_names.py, and either a
+reachable ChEMBL PostgreSQL database or an existing cached ChEMBL name index.
 """
 
 import json
@@ -173,9 +174,30 @@ WHERE md.molecule_type NOT IN ('Unknown')
 ORDER BY md.chembl_id
 """
 
+_CHEMBL_INDEX_REQUIRED_COLUMNS = frozenset({
+    "chembl_id", "pref_name", "synonym", "syn_type",
+})
+
+
+def _validate_chembl_name_index(raw: pd.DataFrame, source: str) -> None:
+    """Fail clearly when a cached or freshly queried name index is unusable."""
+    missing = sorted(_CHEMBL_INDEX_REQUIRED_COLUMNS - set(raw.columns))
+    if missing:
+        raise ValueError(
+            f"Invalid ChEMBL name index from {source}: missing required column(s) {missing}. "
+            f"Available columns: {list(raw.columns)}"
+        )
+
+    invalid_id = raw["chembl_id"].isna() | (raw["chembl_id"].astype(str).str.strip() == "")
+    if invalid_id.any():
+        raise ValueError(
+            f"Invalid ChEMBL name index from {source}: "
+            f"{int(invalid_id.sum()):,} row(s) have a missing or blank chembl_id."
+        )
+
 
 def build_chembl_name_index(
-    conn: psycopg2.extensions.connection,
+    conn: Optional[psycopg2.extensions.connection],
     out_dir: str,
     force_rebuild: bool = False,
 ) -> Tuple[Dict[str, List[dict]], Dict[str, List[dict]]]:
@@ -195,14 +217,21 @@ def build_chembl_name_index(
     if not force_rebuild and os.path.exists(cache_path):
         print(f"Loading cached ChEMBL name index from {cache_path}")
         raw = pd.read_parquet(cache_path)
+        _validate_chembl_name_index(raw, cache_path)
         print(f"  Loaded {len(raw):,} rows from cache")
     else:
+        if conn is None:
+            raise RuntimeError(
+                "A ChEMBL database connection is required when the name-index cache "
+                "does not exist or --force-rebuild-index is used."
+            )
         print("Querying ChEMBL for molecule names and synonyms...")
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(_CHEMBL_INDEX_QUERY)
             rows = cur.fetchall()
 
         raw = pd.DataFrame(rows)
+        _validate_chembl_name_index(raw, "the ChEMBL database query")
         print(f"  Fetched {len(raw):,} rows from ChEMBL")
 
         os.makedirs(out_dir, exist_ok=True)
@@ -686,22 +715,25 @@ if __name__ == "__main__":
     print("=" * 60)
     print("Step 1: ChEMBL name index")
     print("=" * 60)
-    conn = psycopg2.connect(
-        dbname=_cfg.CHEMBL_DB_NAME,
-        user=_cfg.CHEMBL_DB_USER,
-        password=args.db_password,
-        host=_cfg.CHEMBL_DB_HOST,
-        port=_cfg.CHEMBL_DB_PORT,
-    )
-    print(f"Connected to ChEMBL ({_cfg.CHEMBL_DB_NAME}@{_cfg.CHEMBL_DB_HOST}:{_cfg.CHEMBL_DB_PORT})")
-
-    try:
-        pref_index, syn_index = build_chembl_name_index(
-            conn, OUT_DIR, force_rebuild=args.force_rebuild_index,
+    cache_path = os.path.join(OUT_DIR, "chembl_name_index.parquet")
+    if os.path.exists(cache_path) and not args.force_rebuild_index:
+        pref_index, syn_index = build_chembl_name_index(None, OUT_DIR)
+    else:
+        conn = psycopg2.connect(
+            dbname=_cfg.CHEMBL_DB_NAME,
+            user=_cfg.CHEMBL_DB_USER,
+            password=args.db_password,
+            host=_cfg.CHEMBL_DB_HOST,
+            port=_cfg.CHEMBL_DB_PORT,
         )
-    finally:
-        conn.close()
-        print("Database connection closed")
+        print(f"Connected to ChEMBL ({_cfg.CHEMBL_DB_NAME}@{_cfg.CHEMBL_DB_HOST}:{_cfg.CHEMBL_DB_PORT})")
+        try:
+            pref_index, syn_index = build_chembl_name_index(
+                conn, OUT_DIR, force_rebuild=args.force_rebuild_index,
+            )
+        finally:
+            conn.close()
+            print("Database connection closed")
 
     # ── 2. Load FAERS and build unique name table ─────────────────────
     print("\n" + "=" * 60)
