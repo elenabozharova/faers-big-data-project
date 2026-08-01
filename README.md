@@ -95,6 +95,28 @@ partial downloads, runtime logs, and generated data are not committed.
 The 2012 data remains a later compatibility stage: Q1-Q3 use legacy AERS
 files, and Q3 is a partial quarter.
 
+## Milestone 3: raw schema and quality profiles
+
+The read-only profiler scans FAERS tables inside each ZIP in bounded pandas
+chunks and writes `raw_schema_profile.csv` plus `raw_schema_summary.json`.
+
+```powershell
+python src/profile_faers_raw.py --years 2024 --quarters 1
+python src/profile_faers_raw.py --years 2024
+python src/profile_faers_raw.py --years 2023 2024 2025
+python src/profile_faers_raw.py --years 2024 --quarters 1 --max-rows-per-table 5000 --out-dir reports/data_quality/sample
+```
+
+Profiles preserve ordered raw column names and use trimmed, lowercase names
+only for logical comparisons and deterministic schema signatures. Zero means
+an applicable check found no issue; a blank/null metric is not applicable or
+depends on an absent column. Repeated `PRIMARYID` values are expected in DRUG
+and REAC; their duplicate keys are `PRIMARYID + DRUG_SEQ` and trimmed
+`PRIMARYID + PT`. DEMO checks repeated `PRIMARYID` and `CASEID + CASEVERSION`.
+`unique_raw_drug_names` is the count of nonblank, whitespace-trimmed DRUGNAME
+values without case folding or drug normalization. Sample runs are marked and
+cannot overwrite default full reports. Raw ZIPs are never extracted or changed.
+
 ## Current status
 
 Implemented:

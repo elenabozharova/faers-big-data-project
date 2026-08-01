@@ -21,3 +21,9 @@ The tracked manifest is the reproducible declaration of official source URLs,
 filenames, and required ZIP members. The untracked runtime log at
 `data/interim/acquisition/faers_download_log.csv` is append-only local
 provenance: it records attempts, checksums, HTTP metadata, and failures.
+
+Raw archives can be profiled in place without extraction or modification:
+
+```powershell
+python src/profile_faers_raw.py --years 2024
+```
