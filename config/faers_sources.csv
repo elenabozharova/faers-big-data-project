@@ -1,0 +1,13 @@
+year,quarter,source_system,format,url,source_filename,local_filename,expected_inner_demo,expected_inner_drug,expected_inner_reac,notes
+2023,1,FAERS,ASCII,https://fis.fda.gov/content/Exports/faers_ascii_2023q1.zip,faers_ascii_2023q1.zip,faers_ascii_2023q1.zip,ASCII/DEMO23Q1.txt,ASCII/DRUG23Q1.txt,ASCII/REAC23Q1.txt,Official FDA quarterly ASCII archive
+2023,2,FAERS,ASCII,https://fis.fda.gov/content/Exports/faers_ascii_2023q2.zip,faers_ascii_2023q2.zip,faers_ascii_2023q2.zip,ASCII/DEMO23Q2.txt,ASCII/DRUG23Q2.txt,ASCII/REAC23Q2.txt,Official FDA quarterly ASCII archive
+2023,3,FAERS,ASCII,https://fis.fda.gov/content/Exports/faers_ascii_2023Q3.zip,faers_ascii_2023Q3.zip,faers_ascii_2023Q3.zip,ASCII/DEMO23Q3.txt,ASCII/DRUG23Q3.txt,ASCII/REAC23Q3.txt,Official FDA quarterly ASCII archive
+2023,4,FAERS,ASCII,https://fis.fda.gov/content/Exports/faers_ascii_2023Q4.zip,faers_ascii_2023Q4.zip,faers_ascii_2023Q4.zip,ASCII/DEMO23Q4.txt,ASCII/DRUG23Q4.txt,ASCII/REAC23Q4.txt,Official FDA quarterly ASCII archive
+2024,1,FAERS,ASCII,https://fis.fda.gov/content/Exports/faers_ascii_2024q1.zip,faers_ascii_2024q1.zip,faers_ascii_2024q1.zip,ASCII/DEMO24Q1.txt,ASCII/DRUG24Q1.txt,ASCII/REAC24Q1.txt,Official FDA quarterly ASCII archive
+2024,2,FAERS,ASCII,https://fis.fda.gov/content/Exports/faers_ascii_2024q2.zip,faers_ascii_2024q2.zip,faers_ascii_2024q2.zip,ASCII/DEMO24Q2.txt,ASCII/DRUG24Q2.txt,ASCII/REAC24Q2.txt,Official FDA quarterly ASCII archive
+2024,3,FAERS,ASCII,https://fis.fda.gov/content/Exports/faers_ascii_2024q3.zip,faers_ascii_2024q3.zip,faers_ascii_2024q3.zip,ASCII/DEMO24Q3.txt,ASCII/DRUG24Q3.txt,ASCII/REAC24Q3.txt,Official FDA quarterly ASCII archive
+2024,4,FAERS,ASCII,https://fis.fda.gov/content/Exports/faers_ascii_2024Q4.zip,faers_ascii_2024Q4.zip,faers_ascii_2024Q4.zip,ASCII/DEMO24Q4.txt,ASCII/DRUG24Q4.txt,ASCII/REAC24Q4.txt,Official FDA quarterly ASCII archive
+2025,1,FAERS,ASCII,https://fis.fda.gov/content/Exports/faers_ascii_2025q1.zip,faers_ascii_2025q1.zip,faers_ascii_2025q1.zip,ASCII/DEMO25Q1.txt,ASCII/DRUG25Q1.txt,ASCII/REAC25Q1.txt,Official FDA quarterly ASCII archive
+2025,2,FAERS,ASCII,https://fis.fda.gov/content/Exports/faers_ascii_2025q2.zip,faers_ascii_2025q2.zip,faers_ascii_2025q2.zip,ASCII/DEMO25Q2.txt,ASCII/DRUG25Q2.txt,ASCII/REAC25Q2.txt,Official FDA quarterly ASCII archive
+2025,3,FAERS,ASCII,https://fis.fda.gov/content/Exports/faers_ascii_2025q3.zip,faers_ascii_2025q3.zip,faers_ascii_2025q3.zip,ASCII/DEMO25Q3.txt,ASCII/DRUG25Q3.txt,ASCII/REAC25Q3.txt,Official FDA quarterly ASCII archive
+2025,4,FAERS,ASCII,https://fis.fda.gov/content/Exports/faers_ascii_2025Q4.zip,faers_ascii_2025Q4.zip,faers_ascii_2025Q4.zip,ASCII/DEMO25Q4.txt,ASCII/DRUG25Q4.txt,ASCII/REAC25Q4.txt,Official FDA quarterly ASCII archive
