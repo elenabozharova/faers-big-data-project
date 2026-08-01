@@ -40,7 +40,7 @@ itself is out of scope here.
 Explicitly out of scope (unchanged from process_faers_case_level.py):
   - PRR / disproportionality statistics (Milestone 7)
   - any modeling / temporal-persistence prediction layer
-  - Spark, Dask, R-GCN, Decagon/ChEMBL/STRING enrichment, Kafka
+  - temporal modeling and scalable processing
 
 Usage
 -----
@@ -120,7 +120,7 @@ def load_year_raw_tables(year: int, max_rows_per_quarter: int = None) -> tuple:
     Fails loudly (FileNotFoundError) if any of the four quarterly zips is
     missing. A missing DEMO/DRUG/REAC file *inside* a present zip, or a zip
     missing a required column, also fails loudly -- via KeyError from
-    zipfile.open() (process_faers.load_faers_table) or the ValueError
+    zipfile.open() (the shared FAERS loader) or the ValueError
     process_faers_case_level._require_columns already raises; neither is
     caught here, so the run stops immediately rather than silently skipping
     a quarter.
@@ -270,7 +270,6 @@ def process_year(
     year: int,
     out_dir: str,
     mapping_file: str,
-    drug_id_mode: str,
     pair_role_filter: str,
     max_rows_per_join_chunk: int,
     max_rows_per_quarter: int = None,
@@ -283,7 +282,6 @@ def process_year(
     print("=" * 60)
     print(f"FAERS CASE-LEVEL Annual Pipeline (POC) -- year {year}")
     print("=" * 60)
-    print(f"  Drug ID mode:     {drug_id_mode}")
     print(f"  Pair role filter: {pair_role_filter}")
     print(f"  Output dir:       {year_out_dir}")
     if max_rows_per_quarter:
@@ -317,29 +315,27 @@ def process_year(
     pfcl.run_case_reactions_validation(resolved_reac_df, case_reactions_df)
     pfcl.save_case_reactions_artifacts(year_out_dir, case_reactions_df, reaction_dedup_diagnostics)
 
-    print(f"\n--- {year} Milestone 4c: build case_drugs (drug_id_mode={drug_id_mode}) ---")
+    print(f"\n--- {year} Milestone 4c: build case_drugs (ChEMBL identifiers) ---")
     case_drugs_long_df, case_drugs_df, drug_mapping_diagnostics, unmapped_drugs_top_df = pfcl.build_case_drugs(
-        resolved_drug_df, mapping_file, drug_id_mode=drug_id_mode, include_fuzzy=include_fuzzy,
+        resolved_drug_df, mapping_file, include_fuzzy=include_fuzzy,
     )
     pfcl.print_drug_mapping_diagnostics(drug_mapping_diagnostics)
-    pfcl.run_case_drugs_validation(resolved_drug_df, case_drugs_long_df, case_drugs_df, drug_id_mode)
+    pfcl.run_case_drugs_validation(resolved_drug_df, case_drugs_long_df, case_drugs_df)
     pfcl.save_case_drugs_artifacts(
         year_out_dir, case_drugs_long_df, case_drugs_df, drug_mapping_diagnostics, unmapped_drugs_top_df,
     )
 
     print(f"\n--- {year} Milestone 5: build case_drug_pairs ---")
-    case_drug_pairs_df, drug_pair_diagnostics, high_polypharmacy_df = pfcl.build_case_drug_pairs(
-        case_drugs_df, drug_id_mode,
-    )
+    case_drug_pairs_df, drug_pair_diagnostics, high_polypharmacy_df = pfcl.build_case_drug_pairs(case_drugs_df)
     pfcl.print_drug_pair_diagnostics(drug_pair_diagnostics)
-    pfcl.run_case_drug_pairs_validation(case_drugs_df, case_drug_pairs_df, drug_id_mode)
+    pfcl.run_case_drug_pairs_validation(case_drugs_df, case_drug_pairs_df)
     pfcl.save_case_drug_pairs_artifacts(
         year_out_dir, case_drug_pairs_df, drug_pair_diagnostics, high_polypharmacy_df,
     )
 
     print(f"\n--- {year} Milestone 5c: role-aware pair audit ---")
     role_audit_df, role_audit_diagnostics = pfcl.build_case_drug_pair_role_audit(
-        case_drug_pairs_df, case_drugs_df, drug_id_mode,
+        case_drug_pairs_df, case_drugs_df,
     )
     pfcl.print_drug_pair_role_audit_diagnostics(role_audit_diagnostics)
     pfcl.run_drug_pair_role_audit_validation(case_drug_pairs_df, role_audit_df, role_audit_diagnostics)
@@ -347,7 +343,7 @@ def process_year(
 
     print(f"\n--- {year} Milestone 5d: apply pair-role filter (pair_role_filter={pair_role_filter}) ---")
     selected_pairs_df, pair_filter_diagnostics = pfcl.apply_pair_role_filter(
-        case_drug_pairs_df, role_audit_df, pair_role_filter, drug_id_mode,
+        case_drug_pairs_df, role_audit_df, pair_role_filter,
     )
     pfcl.print_pair_role_filter_diagnostics(pair_filter_diagnostics)
     pfcl.run_pair_role_filter_validation(case_drug_pairs_df, role_audit_df, selected_pairs_df, pair_role_filter)
@@ -358,14 +354,14 @@ def process_year(
     n_pair_reaction_rows, drug_pair_reaction_counts_df, pair_reaction_case_stats_df, row_validation_summary = (
         pfcl.build_case_pair_reactions_chunked(
             selected_pairs_df, case_reactions_df, case_pair_reactions_path,
-            drug_id_mode, pair_role_filter, max_rows_per_chunk=max_rows_per_join_chunk,
+            pair_role_filter, max_rows_per_chunk=max_rows_per_join_chunk,
         )
     )
-    pfcl.run_case_pair_reactions_validation(row_validation_summary, pair_role_filter, drug_id_mode)
+    pfcl.run_case_pair_reactions_validation(row_validation_summary, pair_role_filter)
 
     pair_reaction_diagnostics = pfcl.compute_pair_reaction_diagnostics(
         selected_pairs_df, case_reactions_df, n_pair_reaction_rows, drug_pair_reaction_counts_df,
-        pair_reaction_case_stats_df, drug_id_mode, pair_role_filter,
+        pair_reaction_case_stats_df, pair_role_filter,
     )
     pfcl.print_pair_reaction_diagnostics(pair_reaction_diagnostics)
     pfcl.run_drug_pair_reaction_counts_validation(drug_pair_reaction_counts_df, case_pair_reactions_path)
@@ -431,10 +427,6 @@ def main() -> None:
         help="Include fuzzy-matched drug names when building case_drugs. Default: excluded.",
     )
     parser.add_argument(
-        "--drug-id-mode", choices=pfcl.DRUG_ID_MODES, default=pfcl.DEFAULT_DRUG_ID_MODE,
-        help="How mapped_drug_id is derived -- see process_faers_case_level.py --drug-id-mode.",
-    )
-    parser.add_argument(
         "--pair-role-filter", choices=pfcl.PAIR_ROLE_FILTERS, default=pfcl.DEFAULT_PAIR_ROLE_FILTER,
         help="Which case_drug_pairs rows proceed to the pair-reaction join -- see "
              "process_faers_case_level.py --pair-role-filter.",
@@ -458,7 +450,6 @@ def main() -> None:
             year=year,
             out_dir=args.out_dir,
             mapping_file=args.mapping_file,
-            drug_id_mode=args.drug_id_mode,
             pair_role_filter=args.pair_role_filter,
             max_rows_per_join_chunk=args.max_rows_per_join_chunk,
             max_rows_per_quarter=args.max_rows_per_quarter,

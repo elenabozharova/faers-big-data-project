@@ -1,14 +1,9 @@
 """
-process_faers_case_level.py -- Corrected CASE-LEVEL FAERS preprocessing (NEW pipeline).
-
-This is a new, independent entry point. It does not modify, import the
-internals of, or change the behavior of process_faers.py. That script keeps
-running exactly as before.
+process_faers_case_level.py -- Case-level FAERS preprocessing.
 
 Why a new pipeline
 -------------------
-process_faers.py treats every `primaryid` as an independent case. FAERS
-resubmits cases over time: the DEMO table's `caseid` + `caseversion` identify
+FAERS resubmits cases over time: the DEMO table's `caseid` + `caseversion` identify
 the same real-world case reported/amended multiple times under different
 `primaryid`s. Counting every primaryid inflates report counts and distorts
 co-occurrence signal strength. This pipeline resolves CASEID/CASEVERSION so
@@ -22,7 +17,7 @@ Milestone status
   [x] Milestone 3 -- resolve CASEID/CASEVERSION; filter to retained primaryids
   [x] Milestone 4 -- dedupe reactions per case (case_reactions.parquet)
   [x] Milestone 4b -- map + dedupe drugs per case (case_drugs.parquet)
-  [x] Milestone 4c -- selectable drug ID mode (decagon_idx / chembl_id)
+  [x] Milestone 4c -- ChEMBL identifier mapping
   [x] Milestone 5 -- canonical (drug_a, drug_b) pair generation per case
   [x] Milestone 5b -- expected pair-reaction join-size audit (no join)
   [x] Milestone 5c -- role-aware pair audit (PS/SS/C/I, no filtering)
@@ -53,42 +48,21 @@ rows whose PRIMARYID was retained. Still explicitly out of scope:
 
 Milestone 4 scope
 ------------------
-Builds case_reactions.parquet: one row per (caseid, reaction_pt). Reuses
-process_faers._SE_EXCLUDE (administrative/non-clinical PT strings) read-only,
-purely for PT filtering -- no old row/primaryid-counting logic is reused.
+Builds case_reactions.parquet: one row per (caseid, reaction_pt), applying
+the shared administrative/non-clinical reaction PT exclusion list.
 
 Milestone 4b scope
 -------------------
 Builds case_drugs_long.parquet (row-level mapping provenance) and
-case_drugs.parquet (one row per caseid, mapped_drug_id). Reuses, read-only:
-  - the Tier 0 raw-name selection rule (prod_ai vs drugname) and Tier 1
-    normalize_drug_string(), both from process_faers.py's
-    map_drug_rows_to_decagon()
-  - the FAERS->ChEMBL mapping file and the Decagon drug_to_idx.json universe
-Does NOT reuse build_name_to_decagon_lookup()/map_drug_rows_to_decagon()
-themselves, since those collapse "why a drug didn't map" into aggregate
-counters -- this milestone needs a per-row mapping_status, so the row-level
-join against the mapping table is reimplemented here (same underlying
-rules: no ChEMBL id / ambiguous / fuzzy / outside Decagon universe).
+case_drugs.parquet (one row per caseid, mapped_drug_id). Drug names are
+selected from prod_ai/drugname, normalized, and joined to the
+FAERS-to-ChEMBL mapping artifact. mapped_drug_id is always a ChEMBL ID.
 
-Milestone 4c scope (this file)
--------------------------------
-Adds --drug-id-mode, so `mapped_drug_id` can be either:
-  - decagon_idx (default, backward-compatible with Milestone 4b): a row is
-    only "mapped" if its ChEMBL id also falls inside the old Decagon
-    drug_to_idx.json universe; mapped_drug_id is that integer index.
-  - chembl_id (recommended for the drug-only R-GCN direction the thesis is
-    now taking): mapped_drug_id is the ChEMBL id string itself, with no
-    Decagon-universe restriction. A row is "mapped" as soon as it has a
-    valid, unambiguous ChEMBL id that passes the fuzzy-inclusion rule --
-    `unmapped_outside_drug_universe` essentially disappears in this mode.
-Both modes share the same Tier 0/Tier 1 name resolution and the same
-FAERS->ChEMBL mapping file; only the "is this row mapped, and to what ID"
-step differs. `drug_id_mode` is stamped onto every output row so a run's
-provenance is unambiguous even if two runs' artifacts are later combined.
-Still explicitly out of scope:
-  - drug-pair generation (Milestone 5)
-  - PRR / disproportionality statistics (Milestone 7)
+Milestone 4c scope
+------------------
+Maps valid, unambiguous FAERS drug names to ChEMBL identifiers. Fuzzy matches
+remain excluded unless explicitly enabled. No graph index or external drug
+universe is used.
 
 Milestone 5 scope
 ------------------
@@ -145,14 +119,14 @@ merge -- see that function's docstring for why this is still exact (not
 an approximation) despite never materializing the full table at once.
 Still explicitly out of scope:
   - PRR / disproportionality statistics (Milestone 7)
-  - R-GCN export, train/validation/test splitting
+  - temporal feature generation and train/validation/test splitting
   - collapsing ChEMBL salt/form ids to a parent active ingredient
 
 This file does NOT:
   - implement full preprocessing
   - claim or compute causality between a drug pair and a reaction
   - compute PRR (Proportional Reporting Ratio)
-  - touch R-GCN, ChEMBL, STRING, or Decagon adjacency / training code
+  - implement temporal modeling or scalable processing
 
 Usage
 -----
@@ -186,25 +160,12 @@ if _SRC_DIR not in sys.path:
 import config as _cfg  # noqa: E402
 
 # Reused as-is (read-only helpers/constants; not modified, not copied):
-from process_faers import load_faers_table  # noqa: E402  -- used in Milestone 2
+from faers_utils import REACTION_PT_EXCLUDE, load_faers_table  # noqa: E402
 from normalize_drug_names import normalize_drug_string  # noqa: E402  -- used in Milestone 4b+
-
-try:
-    # Administrative/non-clinical MedDRA PT strings (plain frozenset of
-    # data, no row/primaryid-counting logic). Used only to filter reaction
-    # PTs in build_case_reactions(); process_faers.py itself is untouched.
-    from process_faers import _SE_EXCLUDE  # noqa: E402
-except ImportError:
-    _SE_EXCLUDE = None  # exclusion list unavailable -- Milestone 4 will skip this filter and say so
 
 DEFAULT_OUT_DIR = os.path.join(DATA_PROCESSED, "faers_case_level")
 DEFAULT_MAPPING_FILE = os.path.join(DATA_PROCESSED, "faers", "faers_drug_to_chembl.parquet")
 
-# Milestone 4c: how mapped_drug_id is derived. 'decagon_idx' is the default
-# for backward compatibility with Milestone 4b; 'chembl_id' is recommended
-# for the drug-only R-GCN direction (no Decagon universe restriction).
-DRUG_ID_MODES = ("decagon_idx", "chembl_id")
-DEFAULT_DRUG_ID_MODE = "decagon_idx"
 _CHEMBL_ID_RE = re.compile(r"^CHEMBL\d+$")
 
 
@@ -228,8 +189,8 @@ def _load_raw_faers_table(
     Load a dollar-delimited FAERS ASCII table from either an extracted
     directory (--faers-dir) or a quarterly zip (--faers-zip).
 
-    Zip mode reuses process_faers.load_faers_table() unmodified. Directory
-    mode is new (the old pipeline never reads from an extracted directory).
+    Zip mode uses the shared FAERS ZIP loader. Directory mode reads an
+    already-extracted table.
     """
     if faers_dir:
         candidates = [
@@ -723,9 +684,7 @@ def build_case_reactions(resolved_reac_df: pd.DataFrame) -> tuple:
       1. Normalize pt -> reaction_pt: lowercase, strip, collapse repeated
          internal whitespace; empty strings become missing.
       2. Drop rows with missing caseid or missing/blank reaction_pt.
-      3. Optionally drop administrative/non-clinical PTs using
-         process_faers._SE_EXCLUDE (reused read-only, PT filtering only --
-         no row/primaryid-counting logic from the old pipeline is reused).
+      3. Drop administrative/non-clinical PTs using the shared exclusion list.
       4. Deduplicate to one row per (caseid, reaction_pt) -- a case
          contributes a given MedDRA PT at most once. source_primaryid keeps
          whichever primaryid sorts first within the case for provenance
@@ -755,21 +714,13 @@ def build_case_reactions(resolved_reac_df: pd.DataFrame) -> tuple:
     working = working[~missing_caseid_mask & ~missing_pt_mask].copy()
 
     # Step 3: optional administrative/non-clinical PT exclusion
-    exclusion_reused = _SE_EXCLUDE is not None
-    n_excluded = 0
-    if exclusion_reused:
-        excluded_mask = working["reaction_pt"].isin(_SE_EXCLUDE)
-        n_excluded = int(excluded_mask.sum())
-        print(
-            f"  Reused process_faers._SE_EXCLUDE ({len(_SE_EXCLUDE)} PTs, PT filtering only): "
-            f"removed {n_excluded:,} administrative/non-clinical rows"
-        )
-        working = working[~excluded_mask].copy()
-    else:
-        print(
-            "  [TODO] process_faers._SE_EXCLUDE unavailable -- no administrative/non-clinical "
-            "PT exclusion list applied (not inventing a new one)"
-        )
+    excluded_mask = working["reaction_pt"].isin(REACTION_PT_EXCLUDE)
+    n_excluded = int(excluded_mask.sum())
+    print(
+        f"  Applied reaction PT exclusion list ({len(REACTION_PT_EXCLUDE)} PTs): "
+        f"removed {n_excluded:,} administrative/non-clinical rows"
+    )
+    working = working[~excluded_mask].copy()
 
     n_before_dedup = len(working)
 
@@ -789,7 +740,7 @@ def build_case_reactions(resolved_reac_df: pd.DataFrame) -> tuple:
         "n_input_rows": n_input_rows,
         "n_missing_caseid": n_missing_caseid,
         "n_missing_or_blank_pt": n_missing_pt,
-        "exclusion_list_reused": exclusion_reused,
+        "exclusion_list_applied": True,
         "n_removed_by_exclusion_list": n_excluded,
         "n_rows_before_dedup": n_before_dedup,
         "n_rows_after_dedup": n_after_dedup,
@@ -816,7 +767,7 @@ def print_reaction_dedup_diagnostics(diagnostics: dict) -> None:
     print(f"    input resolved REAC rows:       {d['n_input_rows']:,}")
     print(f"    rows with missing caseid:       {d['n_missing_caseid']:,}")
     print(f"    rows missing/blank PT:          {d['n_missing_or_blank_pt']:,}")
-    print(f"    exclusion list reused:          {d['exclusion_list_reused']}")
+    print(f"    exclusion list applied:         {d['exclusion_list_applied']}")
     print(f"    rows removed by exclusion list: {d['n_removed_by_exclusion_list']:,}")
     print(f"    rows before dedup:              {d['n_rows_before_dedup']:,}")
     print(f"    rows after dedup:               {d['n_rows_after_dedup']:,}")
@@ -877,18 +828,10 @@ def save_case_reactions_artifacts(out_dir: str, case_reactions_df: pd.DataFrame,
 # Milestone 4b -- map + dedupe drugs per case (case_drugs.parquet)
 # ---------------------------------------------------------------------------
 
-# Drug universe used for mapped_drug_id. Mirrors process_faers.py's default
-# (--mode all, the broad ChEMBL activity-based universe); this pipeline has
-# no --mode flag yet.
-_DRUG_UNIVERSE_MODE = "all"
-
-
 def _choose_raw_drug_name(drug_df: pd.DataFrame) -> pd.Series:
     """
-    Tier 0 raw-name selection -- identical rule to
-    process_faers.map_drug_rows_to_decagon(): prefer prod_ai when present,
-    non-empty (>2 chars), and not purely numeric; otherwise fall back to
-    drugname.
+    Tier 0 raw-name selection: prefer prod_ai when present, non-empty
+    (>2 chars), and not purely numeric; otherwise fall back to drugname.
     """
     prod_ai = (
         drug_df["prod_ai"].fillna("").astype(str).str.strip()
@@ -907,8 +850,7 @@ def _choose_raw_drug_name(drug_df: pd.DataFrame) -> pd.Series:
 def load_drug_mapping_file(mapping_file: str) -> pd.DataFrame:
     """
     Load the FAERS drug name -> ChEMBL mapping parquet from an explicit file
-    path (this pipeline's --mapping-file is a full path, unlike
-    process_faers.load_drug_mapping() which takes a containing directory).
+    path supplied through --mapping-file.
     """
     if not os.path.exists(mapping_file):
         raise FileNotFoundError(
@@ -924,30 +866,9 @@ def load_drug_mapping_file(mapping_file: str) -> pd.DataFrame:
     return df
 
 
-def load_drug_universe(mode: str = _DRUG_UNIVERSE_MODE) -> dict:
-    """
-    Load the Decagon drug_to_idx.json for the given universe mode.
-
-    mode='strict' -> data/processed/decagon/drug_to_idx.json   (mechanism-based, smaller)
-    mode='all'    -> data/processed/decagon_all/drug_to_idx.json (broad activity-based; default here)
-    """
-    subdir = "decagon" if mode == "strict" else "decagon_all"
-    path = os.path.join(DATA_PROCESSED, subdir, "drug_to_idx.json")
-    if not os.path.exists(path):
-        raise FileNotFoundError(
-            f"Decagon drug index not found at:\n  {path}\n"
-            f"Run build_decagon_graph.py {'strict' if mode == 'strict' else 'all'} first."
-        )
-    with open(path, encoding="utf-8") as f:
-        idx = json.load(f)
-    print(f"  Decagon drug universe ({mode}): {len(idx):,} drugs")
-    return idx
-
-
 def build_case_drugs(
     resolved_drug_df: pd.DataFrame,
     mapping_file: str,
-    drug_id_mode: str = DEFAULT_DRUG_ID_MODE,
     include_fuzzy: bool = False,
 ) -> tuple:
     """
@@ -957,24 +878,13 @@ def build_case_drugs(
     Per row: choose chosen_raw_name (Tier 0), normalize it (Tier 1) into
     normalized_drug_name, then classify mapping_status as one of:
       mapped / unmapped_blank_name / unmapped_no_match /
-      unmapped_ambiguous / excluded_fuzzy / unmapped_outside_drug_universe
-    (This is more granular than process_faers.py's build_name_to_decagon_lookup,
-    which lumps "no chembl_id" and "ambiguous" into a single counter.)
+      unmapped_ambiguous / excluded_fuzzy.
 
-    drug_id_mode (Milestone 4c) controls what mapped_drug_id is and whether
-    the Decagon universe restricts "mapped" at all:
-      - 'decagon_idx': mapped_drug_id is the Decagon drug_to_idx.json index;
-        a row outside that universe is 'unmapped_outside_drug_universe'.
-      - 'chembl_id': mapped_drug_id is the ChEMBL id itself; there is no
-        Decagon universe restriction, so 'unmapped_outside_drug_universe'
-        will not occur (every row with a valid, unambiguous, non-fuzzy-
-        excluded ChEMBL id is mapped).
+    mapped_drug_id is always the mapped ChEMBL identifier. No graph-node
+    index or external drug universe is required.
 
     Returns (case_drugs_long_df, case_drugs_df, diagnostics_dict, unmapped_drugs_top_df).
     """
-    if drug_id_mode not in DRUG_ID_MODES:
-        raise ValueError(f"drug_id_mode must be one of {DRUG_ID_MODES}, got {drug_id_mode!r}")
-
     _require_columns(resolved_drug_df, ["caseid", "primaryid"], "resolved_drug_rows")
 
     n_input_rows = len(resolved_drug_df)
@@ -984,14 +894,6 @@ def build_case_drugs(
             working[col] = ""
 
     mapping_df = load_drug_mapping_file(mapping_file)
-
-    decagon_drug_idx = None
-    decagon_chembl_ids = set()
-    if drug_id_mode == "decagon_idx":
-        decagon_drug_idx = load_drug_universe(_DRUG_UNIVERSE_MODE)
-        decagon_chembl_ids = set(decagon_drug_idx.keys())
-    else:
-        print("  drug_id_mode='chembl_id': skipping Decagon drug_to_idx.json universe restriction")
 
     working["chosen_raw_name"] = _choose_raw_drug_name(working)
 
@@ -1012,36 +914,24 @@ def build_case_drugs(
     has_chembl_id = has_match & working["chembl_id"].notna()
     is_ambiguous = has_chembl_id & working["is_ambiguous"].fillna(False).astype(bool)
     is_fuzzy = has_chembl_id & (working["match_method"] == "fuzzy")
-    if drug_id_mode == "decagon_idx":
-        in_universe = has_chembl_id & working["chembl_id"].isin(decagon_chembl_ids)
-    else:
-        in_universe = has_chembl_id  # chembl_id mode: no Decagon universe restriction
-
     mapping_status = pd.Series("mapped", index=working.index, dtype=object)
     mapping_status[blank_name_mask] = "unmapped_blank_name"
     mapping_status[~blank_name_mask & ~has_chembl_id] = "unmapped_no_match"
     mapping_status[~blank_name_mask & has_chembl_id & is_ambiguous] = "unmapped_ambiguous"
     excluded_fuzzy_mask = ~blank_name_mask & has_chembl_id & ~is_ambiguous & is_fuzzy & (not include_fuzzy)
     mapping_status[excluded_fuzzy_mask] = "excluded_fuzzy"
-    still_candidate = ~blank_name_mask & has_chembl_id & ~is_ambiguous & (include_fuzzy | ~is_fuzzy)
-    mapping_status[still_candidate & ~in_universe] = "unmapped_outside_drug_universe"
-
     working["mapping_status"] = mapping_status
     mapped_mask = working["mapping_status"] == "mapped"
 
     working["mapped_drug_id"] = pd.NA
-    if drug_id_mode == "decagon_idx":
-        working.loc[mapped_mask, "mapped_drug_id"] = working.loc[mapped_mask, "chembl_id"].map(decagon_drug_idx)
-    else:
-        working.loc[mapped_mask, "mapped_drug_id"] = working.loc[mapped_mask, "chembl_id"]
+    working.loc[mapped_mask, "mapped_drug_id"] = working.loc[mapped_mask, "chembl_id"]
     working["mapping_method"] = working["match_method"]
-    working["drug_id_mode"] = drug_id_mode
 
     case_drugs_long_df = working[
         [
             "caseid", "primaryid", "role_cod", "drugname", "prod_ai",
             "chosen_raw_name", "normalized_drug_name", "mapped_drug_id",
-            "mapping_status", "mapping_method", "chembl_id", "drug_id_mode",
+            "mapping_status", "mapping_method", "chembl_id",
         ]
     ].reset_index(drop=True)
 
@@ -1061,7 +951,6 @@ def build_case_drugs(
         mapping_methods_seen=("mapping_method", lambda s: sorted(set(s.dropna().astype(str)))),
         n_raw_rows_for_case_drug=("primaryid", "size"),
     ).reset_index()
-    case_drugs_df["drug_id_mode"] = drug_id_mode
 
     n_dedup_removed = len(mapped_rows) - len(case_drugs_df)
     print(
@@ -1096,7 +985,6 @@ def build_case_drugs(
     n_cases_with_ge2_mapped = int((mapped_drug_count_per_case >= 2).sum())
 
     diagnostics = {
-        "drug_id_mode": drug_id_mode,
         "n_input_rows": n_input_rows,
         "n_blank_chosen_name": int(blank_name_mask.sum()),
         "n_mapped_rows": n_mapped,
@@ -1108,9 +996,6 @@ def build_case_drugs(
         "n_unique_mapped_drugs": int(case_drugs_df["mapped_drug_id"].nunique()),
         "include_fuzzy": include_fuzzy,
         "n_removed_fuzzy_excluded": int((mapping_status == "excluded_fuzzy").sum()),
-        # Only relevant in drug_id_mode='decagon_idx'; structurally 0 in 'chembl_id' mode
-        # since that mode applies no Decagon-universe restriction.
-        "n_removed_outside_drug_universe": int((mapping_status == "unmapped_outside_drug_universe").sum()),
         "n_removed_ambiguous": int((mapping_status == "unmapped_ambiguous").sum()),
         "n_removed_no_match": int((mapping_status == "unmapped_no_match").sum()),
         "n_duplicate_case_drug_rows_removed": int(n_dedup_removed),
@@ -1127,7 +1012,6 @@ def build_case_drugs(
 def print_drug_mapping_diagnostics(diagnostics: dict) -> None:
     d = diagnostics
     print("\n  Drug mapping diagnostics:")
-    print(f"    drug_id_mode:                          {d['drug_id_mode']}")
     print(f"    input resolved DRUG rows:             {d['n_input_rows']:,}")
     print(f"    rows with blank chosen name:           {d['n_blank_chosen_name']:,}")
     print(f"    mapped rows:                           {d['n_mapped_rows']:,}")
@@ -1140,8 +1024,6 @@ def print_drug_mapping_diagnostics(diagnostics: dict) -> None:
     print(f"    unique mapped drug ids:                {d['n_unique_mapped_drugs']:,}")
     print(f"    include_fuzzy:                         {d['include_fuzzy']}")
     print(f"    removed (fuzzy excluded):              {d['n_removed_fuzzy_excluded']:,}")
-    universe_note = "" if d["drug_id_mode"] == "decagon_idx" else "  (n/a in chembl_id mode)"
-    print(f"    removed (outside drug universe):       {d['n_removed_outside_drug_universe']:,}{universe_note}")
     print(f"    removed (ambiguous):                   {d['n_removed_ambiguous']:,}")
     print(f"    removed (no match):                    {d['n_removed_no_match']:,}")
     print(f"    duplicate (caseid, mapped_drug_id):    {d['n_duplicate_case_drug_rows_removed']:,}")
@@ -1156,7 +1038,6 @@ def run_case_drugs_validation(
     resolved_drug_df: pd.DataFrame,
     case_drugs_long_df: pd.DataFrame,
     case_drugs_df: pd.DataFrame,
-    drug_id_mode: str,
 ) -> None:
     """
     Validate case_drugs_long/case_drugs. Raises AssertionError listing every
@@ -1168,26 +1049,11 @@ def run_case_drugs_validation(
     required_long_cols = [
         "caseid", "primaryid", "role_cod", "drugname", "prod_ai",
         "chosen_raw_name", "normalized_drug_name", "mapped_drug_id",
-        "mapping_status", "mapping_method", "chembl_id", "drug_id_mode",
+        "mapping_status", "mapping_method", "chembl_id",
     ]
     missing_long_cols = [c for c in required_long_cols if c not in case_drugs_long_df.columns]
     if missing_long_cols:
         failures.append(f"case_drugs_long is missing required column(s): {missing_long_cols}")
-    else:
-        long_modes = set(case_drugs_long_df["drug_id_mode"].dropna().unique())
-        if long_modes != {drug_id_mode}:
-            failures.append(
-                f"case_drugs_long.drug_id_mode has value(s) {sorted(long_modes)}, expected only {drug_id_mode!r}"
-            )
-
-    if "drug_id_mode" not in case_drugs_df.columns:
-        failures.append("case_drugs is missing required column: drug_id_mode")
-    else:
-        short_modes = set(case_drugs_df["drug_id_mode"].dropna().unique())
-        if short_modes and short_modes != {drug_id_mode}:
-            failures.append(
-                f"case_drugs.drug_id_mode has value(s) {sorted(short_modes)}, expected only {drug_id_mode!r}"
-            )
 
     if case_drugs_df["caseid"].isna().any():
         failures.append("case_drugs has rows with null caseid")
@@ -1209,91 +1075,24 @@ def run_case_drugs_validation(
         )
 
     mapped_ids = case_drugs_df["mapped_drug_id"].dropna()
-    if drug_id_mode == "chembl_id":
-        bad_ids = mapped_ids[~mapped_ids.astype(str).str.match(_CHEMBL_ID_RE.pattern)]
-        if len(bad_ids):
-            failures.append(
-                f"{len(bad_ids):,} mapped_drug_id values in chembl_id mode don't look like ChEMBL ids "
-                f"(expected 'CHEMBL<digits>'), e.g. {sorted(bad_ids.astype(str).unique())[:5]}"
-            )
-    else:  # decagon_idx
-        def _is_decagon_index(v) -> bool:
-            if isinstance(v, bool):
-                return False
-            if isinstance(v, (int,)):
-                return True
-            try:
-                return float(v).is_integer()
-            except (TypeError, ValueError):
-                return False
-
-        bad_ids = mapped_ids[~mapped_ids.apply(_is_decagon_index)]
-        if len(bad_ids):
-            failures.append(
-                f"{len(bad_ids):,} mapped_drug_id values in decagon_idx mode don't look like Decagon "
-                f"drug_to_idx.json integer indices, e.g. {sorted(bad_ids.astype(str).unique())[:5]}"
-            )
+    bad_ids = mapped_ids[~mapped_ids.astype(str).str.match(_CHEMBL_ID_RE.pattern)]
+    if len(bad_ids):
+        failures.append(
+            f"{len(bad_ids):,} mapped_drug_id values don't look like ChEMBL ids "
+            f"(expected 'CHEMBL<digits>'), e.g. {sorted(bad_ids.astype(str).unique())[:5]}"
+        )
 
     if failures:
         raise AssertionError("Milestone 4c (case_drugs) validation failed:\n  - " + "\n  - ".join(failures))
 
     print("  All Milestone 4c (case_drugs) validation checks passed:")
     print("    - case_drugs_long has required provenance columns")
-    print("    - case_drugs_long.drug_id_mode has exactly one value, matching the CLI mode")
-    print("    - case_drugs.drug_id_mode present and matches the CLI mode")
     print("    - case_drugs has no missing caseid")
     print("    - case_drugs has no missing mapped_drug_id")
     print("    - case_drugs has no duplicate (caseid, mapped_drug_id)")
     print("    - every case_drugs.caseid present in resolved_drug_rows")
     print("    - every mapped (caseid, mapped_drug_id) in case_drugs_long survives into case_drugs")
-    print(f"    - mapped_drug_id values look like the expected ID type for drug_id_mode={drug_id_mode!r}")
-
-
-# ---------------------------------------------------------------------------
-# Milestone 4c -- decagon_idx vs chembl_id comparison helper
-# ---------------------------------------------------------------------------
-
-# (metric key in drug_mapping_diagnostics.json, human-readable label)
-_COMPARISON_METRICS = [
-    ("drug_id_mode", "drug_id_mode"),
-    ("n_mapped_rows", "mapped row count"),
-    ("mapping_rate", "mapping rate"),
-    ("n_unique_mapped_drugs", "unique mapped drugs"),
-    ("n_unique_chembl_ids_mapped", "unique ChEMBL ids mapped"),
-    ("n_unique_cases_with_mapped_drug", "cases with >=1 mapped drug"),
-    ("n_cases_with_ge2_mapped_drugs", "cases with >=2 mapped drugs"),
-    ("n_cases_with_raw_ge2_mapped_lt2", "cases with raw>=2 but mapped<2"),
-    ("n_removed_outside_drug_universe", "unmapped_outside_drug_universe count"),
-    ("n_removed_ambiguous", "unmapped_ambiguous count"),
-    ("n_removed_no_match", "unmapped_no_match count"),
-    ("n_removed_fuzzy_excluded", "excluded_fuzzy count"),
-]
-
-
-def compare_drug_id_mode_diagnostics(diag_a: dict, diag_b: dict, label_a: str = "A", label_b: str = "B") -> None:
-    """
-    Print a side-by-side comparison of two drug_mapping_diagnostics.json
-    payloads (Milestone 4c requirement 11), typically one produced with
-    --drug-id-mode decagon_idx and one with --drug-id-mode chembl_id on the
-    same --max-rows sample.
-
-    This does not run the pipeline itself. Produce the two diagnostics
-    files first, e.g.:
-      python src/process_faers_case_level.py --max-rows 5000 --drug-id-mode decagon_idx --out-dir data/processed/faers_case_level_decagon
-      python src/process_faers_case_level.py --max-rows 5000 --drug-id-mode chembl_id  --out-dir data/processed/faers_case_level_chembl
-    then pass the two resulting drug_mapping_diagnostics.json paths via
-    --compare-diagnostics (see main()).
-    """
-    print(f"\n  drug_id_mode comparison: {label_a} vs {label_b}")
-    header = f"    {'metric':<38} {label_a:>18} {label_b:>18}"
-    print(header)
-    print("    " + "-" * (len(header) - 4))
-    for key, label in _COMPARISON_METRICS:
-        va, vb = diag_a.get(key, "n/a"), diag_b.get(key, "n/a")
-        if key == "mapping_rate":
-            va = f"{va:.1%}" if isinstance(va, (int, float)) else va
-            vb = f"{vb:.1%}" if isinstance(vb, (int, float)) else vb
-        print(f"    {label:<38} {str(va):>18} {str(vb):>18}")
+    print("    - mapped_drug_id values are ChEMBL identifiers")
 
 
 def save_case_drugs_artifacts(
@@ -1332,15 +1131,13 @@ _HIGH_POLYPHARMACY_THRESHOLD = 10
 _HIGH_POLYPHARMACY_THRESHOLD_STRICT = 15
 
 
-def build_case_drug_pairs(case_drugs_df: pd.DataFrame, drug_id_mode: str) -> tuple:
+def build_case_drug_pairs(case_drugs_df: pd.DataFrame) -> tuple:
     """
     Build canonical (drug_a, drug_b) pairs per case from case_drugs_df (one
     row per (caseid, mapped_drug_id), mapped rows only -- Milestone 4b/4c).
 
     Per case: take the case's unique mapped_drug_id values, sort them by
-    string value for a deterministic canonical order (works uniformly for
-    ChEMBL id strings in chembl_id mode and for Decagon integer indices in
-    decagon_idx mode -- the sort only needs to be stable, not numeric), then
+    string value for a deterministic canonical order of ChEMBL identifiers, then
     emit every unordered combination with drug_a < drug_b. A case with fewer
     than 2 mapped drugs emits no pairs. No joining with reactions and no
     capping/filtering of high-polypharmacy cases happens here.
@@ -1371,7 +1168,6 @@ def build_case_drug_pairs(case_drugs_df: pd.DataFrame, drug_id_mode: str) -> tup
     case_drug_pairs_df = pd.DataFrame(
         pair_rows, columns=["caseid", "drug_a", "drug_b", "n_mapped_drugs_in_case"]
     )
-    case_drug_pairs_df["drug_id_mode"] = drug_id_mode
 
     n_pairs = len(case_drug_pairs_df)
     n_unique_pairs = (
@@ -1400,7 +1196,6 @@ def build_case_drug_pairs(case_drugs_df: pd.DataFrame, drug_id_mode: str) -> tup
     ]
 
     diagnostics = {
-        "drug_id_mode": drug_id_mode,
         "n_input_case_drugs_rows": n_input_rows,
         "n_unique_cases_in_case_drugs": n_unique_cases,
         "n_cases_with_exactly_1_mapped_drug": n_cases_exactly_1,
@@ -1425,7 +1220,6 @@ def build_case_drug_pairs(case_drugs_df: pd.DataFrame, drug_id_mode: str) -> tup
         )
     else:
         high_polypharmacy_df["n_pairs_generated"] = pd.Series(dtype=int)
-    high_polypharmacy_df["drug_id_mode"] = drug_id_mode
     high_polypharmacy_df = high_polypharmacy_df.sort_values(
         "n_mapped_drugs_in_case", ascending=False
     ).reset_index(drop=True)
@@ -1436,7 +1230,6 @@ def build_case_drug_pairs(case_drugs_df: pd.DataFrame, drug_id_mode: str) -> tup
 def print_drug_pair_diagnostics(diagnostics: dict) -> None:
     d = diagnostics
     print("\n  Drug pair generation diagnostics:")
-    print(f"    drug_id_mode:                          {d['drug_id_mode']}")
     print(f"    input case_drugs rows:                 {d['n_input_case_drugs_rows']:,}")
     print(f"    unique cases in case_drugs:             {d['n_unique_cases_in_case_drugs']:,}")
     print(f"    cases with exactly 1 mapped drug:       {d['n_cases_with_exactly_1_mapped_drug']:,}")
@@ -1461,7 +1254,6 @@ def print_drug_pair_diagnostics(diagnostics: dict) -> None:
 def run_case_drug_pairs_validation(
     case_drugs_df: pd.DataFrame,
     case_drug_pairs_df: pd.DataFrame,
-    drug_id_mode: str,
 ) -> None:
     """
     Validate case_drug_pairs. Raises AssertionError listing every failed
@@ -1470,7 +1262,7 @@ def run_case_drug_pairs_validation(
     """
     failures = []
 
-    required_cols = ["caseid", "drug_a", "drug_b", "n_mapped_drugs_in_case", "drug_id_mode"]
+    required_cols = ["caseid", "drug_a", "drug_b", "n_mapped_drugs_in_case"]
     missing_cols = [c for c in required_cols if c not in case_drug_pairs_df.columns]
     if missing_cols:
         failures.append(f"case_drug_pairs is missing required column(s): {missing_cols}")
@@ -1517,14 +1309,6 @@ def run_case_drug_pairs_validation(
     if not set(case_drug_pairs_df["caseid"]).issubset(valid_caseids):
         failures.append("case_drug_pairs contains a caseid not present in case_drugs")
 
-    modes = set(case_drug_pairs_df["drug_id_mode"].dropna().unique())
-    if modes and modes != {drug_id_mode}:
-        failures.append(
-            f"case_drug_pairs.drug_id_mode has value(s) {sorted(modes)}, expected only {drug_id_mode!r}"
-        )
-    elif not modes and len(case_drug_pairs_df):
-        failures.append("case_drug_pairs.drug_id_mode is entirely null")
-
     if failures:
         raise AssertionError("Milestone 5 (case_drug_pairs) validation failed:\n  - " + "\n  - ".join(failures))
 
@@ -1536,7 +1320,6 @@ def run_case_drug_pairs_validation(
     print("    - no duplicate (caseid, drug_a, drug_b)")
     print("    - generated pair count == n*(n-1)/2 for every case")
     print("    - every case_drug_pairs.caseid present in case_drugs")
-    print("    - drug_id_mode present and consistent with the current run")
 
 
 def save_case_drug_pairs_artifacts(
@@ -1842,7 +1625,6 @@ def _role_set(roles) -> set:
 def build_case_drug_pair_role_audit(
     case_drug_pairs_df: pd.DataFrame,
     case_drugs_df: pd.DataFrame,
-    drug_id_mode: str,
 ) -> tuple:
     """
     Sensitivity-analysis-only audit: attach FAERS role_cod metadata
@@ -1894,13 +1676,11 @@ def build_case_drug_pair_role_audit(
     pair_has_ss = audit_df["drug_a_has_ss"] | audit_df["drug_b_has_ss"]
     pair_has_i = audit_df["drug_a_has_i"] | audit_df["drug_b_has_i"]
     audit_df["has_suspect_or_interacting"] = pair_has_ps | pair_has_ss | pair_has_i
-    audit_df["drug_id_mode"] = drug_id_mode
-
     audit_df = audit_df[[
         "caseid", "drug_a", "drug_b", "roles_a", "roles_b",
         "drug_a_has_ps", "drug_b_has_ps", "drug_a_has_ss", "drug_b_has_ss",
         "drug_a_has_i", "drug_b_has_i", "drug_a_only_c", "drug_b_only_c",
-        "is_cc_pair", "has_suspect_or_interacting", "drug_id_mode",
+        "is_cc_pair", "has_suspect_or_interacting",
     ]]
 
     n_total = len(audit_df)
@@ -1968,7 +1748,6 @@ def build_case_drug_pair_role_audit(
     n_cases_remaining_require_suspect = int((per_case["n_pairs_suspect_or_interacting"] > 0).sum())
 
     diagnostics = {
-        "drug_id_mode": drug_id_mode,
         "total_pair_rows": n_total,
         "n_cc_pairs": n_cc,
         "pct_cc_pairs": _pct(n_cc),
@@ -2007,7 +1786,6 @@ def build_case_drug_pair_role_audit(
 def print_drug_pair_role_audit_diagnostics(diagnostics: dict) -> None:
     d = diagnostics
     print("\n  Role-aware pair audit diagnostics:")
-    print(f"    drug_id_mode:                          {d['drug_id_mode']}")
     print(f"    total pair rows:                       {d['total_pair_rows']:,}")
     print(f"    C-C pairs:                              {d['n_cc_pairs']:,} ({d['pct_cc_pairs']:.2f}%)")
     print(f"    pairs with >=1 PS:                      {d['n_pairs_with_ge1_ps']:,} ({d['pct_pairs_with_ge1_ps']:.2f}%)")
@@ -2052,7 +1830,7 @@ def run_drug_pair_role_audit_validation(
         "caseid", "drug_a", "drug_b", "roles_a", "roles_b",
         "drug_a_has_ps", "drug_b_has_ps", "drug_a_has_ss", "drug_b_has_ss",
         "drug_a_has_i", "drug_b_has_i", "drug_a_only_c", "drug_b_only_c",
-        "is_cc_pair", "has_suspect_or_interacting", "drug_id_mode",
+        "is_cc_pair", "has_suspect_or_interacting",
     ]
     missing_cols = [c for c in required_cols if c not in role_audit_df.columns]
     if missing_cols:
@@ -2121,7 +1899,7 @@ PAIR_ROLE_FILTERS = ("all_pairs", "non_cc")
 DEFAULT_PAIR_ROLE_FILTER = "all_pairs"
 
 _SELECTED_PAIR_COLUMNS = [
-    "caseid", "drug_a", "drug_b", "n_mapped_drugs_in_case", "drug_id_mode",
+    "caseid", "drug_a", "drug_b", "n_mapped_drugs_in_case",
     "pair_role_filter", "drug_a_roles_seen", "drug_b_roles_seen",
     "is_cc_pair", "has_ps", "has_ss", "has_i", "has_suspect_or_interacting",
 ]
@@ -2131,7 +1909,6 @@ def apply_pair_role_filter(
     case_drug_pairs_df: pd.DataFrame,
     case_drug_pair_role_audit_df: pd.DataFrame,
     pair_role_filter: str,
-    drug_id_mode: str,
 ) -> tuple:
     """
     Select which case_drug_pairs rows proceed to the (not-yet-implemented)
@@ -2140,7 +1917,7 @@ def apply_pair_role_filter(
     table (case_drug_pairs_selected.parquet), so the full unfiltered pair
     set and its audit tables remain available.
 
-      'all_pairs' (default, backward-compatible/fully auditable): keep
+      'all_pairs' (default, fully auditable): keep
         every row from case_drug_pairs_df unchanged.
       'non_cc' (recommended for the thesis comparison): drop pairs where
         both drugs are only concomitant (C-C), i.e. keep pairs with >=1
@@ -2179,7 +1956,6 @@ def apply_pair_role_filter(
     merged["has_ss"] = merged["drug_a_has_ss"] | merged["drug_b_has_ss"]
     merged["has_i"] = merged["drug_a_has_i"] | merged["drug_b_has_i"]
     merged["pair_role_filter"] = pair_role_filter
-    merged["drug_id_mode"] = drug_id_mode
 
     if pair_role_filter == "all_pairs":
         selected_df = merged
@@ -2230,7 +2006,6 @@ def apply_pair_role_filter(
 
     diagnostics = {
         "pair_role_filter": pair_role_filter,
-        "drug_id_mode": drug_id_mode,
         "n_input_pairs": n_input,
         "n_selected_pairs": n_selected,
         "n_removed_pairs": n_removed,
@@ -2256,7 +2031,6 @@ def print_pair_role_filter_diagnostics(diagnostics: dict) -> None:
     d = diagnostics
     print("\n  Pair-role filter diagnostics:")
     print(f"    pair_role_filter:                      {d['pair_role_filter']}")
-    print(f"    drug_id_mode:                          {d['drug_id_mode']}")
     print(f"    input pairs:                            {d['n_input_pairs']:,}")
     print(f"    selected pairs:                         {d['n_selected_pairs']:,} ({d['pct_selected_pairs']:.2f}%)")
     print(f"    removed pairs:                          {d['n_removed_pairs']:,} ({d['pct_removed_pairs']:.2f}%)")
@@ -2299,7 +2073,7 @@ def run_pair_role_filter_validation(
 
     required_cols = [
         "caseid", "drug_a", "drug_b", "n_mapped_drugs_in_case",
-        "drug_id_mode", "pair_role_filter",
+        "pair_role_filter",
     ]
     missing_cols = [c for c in required_cols if c not in selected_df.columns]
     if missing_cols:
@@ -2386,8 +2160,7 @@ def save_pair_role_filter_artifacts(
 #     is a raw co-reporting support count, nothing more
 #   - --pair-role-filter all_pairs vs non_cc changes which pairs feed this
 #     join (see Milestone 5d); this milestone does not pick one for you
-#   - R-GCN export and train/validation/test splitting are both still out of
-#     scope
+#   - temporal features and train/validation/test splitting remain out of scope
 
 # A case_pair_reactions row means: this (drug_a, drug_b) pair and this
 # reaction_pt were both reported within the SAME FAERS case. That is
@@ -2398,7 +2171,7 @@ def save_pair_role_filter_artifacts(
 
 _CASE_PAIR_REACTION_ROLE_COLUMNS = ["is_cc_pair", "has_ps", "has_ss", "has_i", "has_suspect_or_interacting"]
 _CASE_PAIR_REACTION_COLUMNS = (
-    ["caseid", "drug_a", "drug_b", "reaction_pt", "n_mapped_drugs_in_case", "drug_id_mode", "pair_role_filter"]
+    ["caseid", "drug_a", "drug_b", "reaction_pt", "n_mapped_drugs_in_case", "pair_role_filter"]
     + _CASE_PAIR_REACTION_ROLE_COLUMNS
 )
 DEFAULT_MAX_ROWS_PER_JOIN_CHUNK = 2_000_000
@@ -2437,7 +2210,7 @@ def build_case_pair_reactions(
     """
     _require_columns(
         selected_pairs_df,
-        ["caseid", "drug_a", "drug_b", "n_mapped_drugs_in_case", "drug_id_mode", "pair_role_filter"],
+        ["caseid", "drug_a", "drug_b", "n_mapped_drugs_in_case", "pair_role_filter"],
         "case_drug_pairs_selected",
     )
     _require_columns(case_reactions_df, ["caseid", "reaction_pt"], "case_reactions")
@@ -2462,7 +2235,7 @@ def build_drug_pair_reaction_counts(case_pair_reactions_df: pd.DataFrame) -> pd.
     """
     _require_columns(
         case_pair_reactions_df,
-        ["caseid", "drug_a", "drug_b", "reaction_pt", "drug_id_mode", "pair_role_filter"],
+        ["caseid", "drug_a", "drug_b", "reaction_pt", "pair_role_filter"],
         "case_pair_reactions",
     )
     counts = (
@@ -2471,11 +2244,10 @@ def build_drug_pair_reaction_counts(case_pair_reactions_df: pd.DataFrame) -> pd.
         .rename("n_cases")
         .reset_index()
     )
-    counts["drug_id_mode"] = case_pair_reactions_df["drug_id_mode"].iloc[0] if len(case_pair_reactions_df) else pd.NA
     counts["pair_role_filter"] = (
         case_pair_reactions_df["pair_role_filter"].iloc[0] if len(case_pair_reactions_df) else pd.NA
     )
-    return counts[["drug_a", "drug_b", "reaction_pt", "n_cases", "drug_id_mode", "pair_role_filter"]]
+    return counts[["drug_a", "drug_b", "reaction_pt", "n_cases", "pair_role_filter"]]
 
 
 def _plan_caseid_chunks(case_stats_df: pd.DataFrame, max_rows_per_chunk: int) -> list:
@@ -2505,7 +2277,6 @@ def build_case_pair_reactions_chunked(
     selected_pairs_df: pd.DataFrame,
     case_reactions_df: pd.DataFrame,
     out_path: str,
-    drug_id_mode: str,
     pair_role_filter: str,
     max_rows_per_chunk: int = DEFAULT_MAX_ROWS_PER_JOIN_CHUNK,
 ) -> tuple:
@@ -2533,7 +2304,7 @@ def build_case_pair_reactions_chunked(
 
       4. Also validates every batch inline (required columns, no missing
          keys, no self-pairs, no duplicate (caseid, drug_a, drug_b,
-         reaction_pt), drug_id_mode/pair_role_filter constant, and in
+         reaction_pt), pair_role_filter constant, and in
          non_cc mode no is_cc_pair rows) and accumulates a summary for
          run_case_pair_reactions_validation() -- raises immediately on the
          first batch that fails, same "fail loudly" convention as the rest
@@ -2543,7 +2314,7 @@ def build_case_pair_reactions_chunked(
     """
     _require_columns(
         selected_pairs_df,
-        ["caseid", "drug_a", "drug_b", "n_mapped_drugs_in_case", "drug_id_mode", "pair_role_filter"],
+        ["caseid", "drug_a", "drug_b", "n_mapped_drugs_in_case", "pair_role_filter"],
         "case_drug_pairs_selected",
     )
     _require_columns(case_reactions_df, ["caseid", "reaction_pt"], "case_reactions")
@@ -2568,7 +2339,7 @@ def build_case_pair_reactions_chunked(
     schema = pa.schema([
         ("caseid", pa.string()), ("drug_a", pa.string()), ("drug_b", pa.string()),
         ("reaction_pt", pa.string()), ("n_mapped_drugs_in_case", pa.int64()),
-        ("drug_id_mode", pa.string()), ("pair_role_filter", pa.string()),
+        ("pair_role_filter", pa.string()),
         ("is_cc_pair", pa.bool_()), ("has_ps", pa.bool_()), ("has_ss", pa.bool_()),
         ("has_i", pa.bool_()), ("has_suspect_or_interacting", pa.bool_()),
     ])
@@ -2578,7 +2349,7 @@ def build_case_pair_reactions_chunked(
     row_validation = {
         "n_missing_caseid": 0, "n_missing_drug_a": 0, "n_missing_drug_b": 0,
         "n_missing_reaction_pt": 0, "n_self_pairs": 0, "n_duplicate_keys": 0,
-        "n_cc_pairs_seen_in_non_cc_mode": 0, "drug_id_modes_seen": set(), "pair_role_filters_seen": set(),
+        "n_cc_pairs_seen_in_non_cc_mode": 0, "pair_role_filters_seen": set(),
     }
 
     with pq.ParquetWriter(out_path, schema) as writer:
@@ -2600,7 +2371,6 @@ def build_case_pair_reactions_chunked(
                 row_validation["n_cc_pairs_seen_in_non_cc_mode"] += (
                     int(chunk_df["is_cc_pair"].fillna(False).astype(bool).sum()) if pair_role_filter == "non_cc" else 0
                 )
-            row_validation["drug_id_modes_seen"] |= set(chunk_df["drug_id_mode"].dropna().unique())
             row_validation["pair_role_filters_seen"] |= set(chunk_df["pair_role_filter"].dropna().unique())
 
             chunk_df["is_cc_pair"] = chunk_df["is_cc_pair"].astype("boolean")
@@ -2627,9 +2397,8 @@ def build_case_pair_reactions_chunked(
         )
     else:
         counts_df = pd.DataFrame(columns=["drug_a", "drug_b", "reaction_pt", "n_cases"])
-    counts_df["drug_id_mode"] = drug_id_mode
     counts_df["pair_role_filter"] = pair_role_filter
-    counts_df = counts_df[["drug_a", "drug_b", "reaction_pt", "n_cases", "drug_id_mode", "pair_role_filter"]]
+    counts_df = counts_df[["drug_a", "drug_b", "reaction_pt", "n_cases", "pair_role_filter"]]
 
     print(f"  case_pair_reactions: {total_rows:,} rows written to {out_path}")
     print(f"  drug_pair_reaction_counts: {len(counts_df):,} unique (drug_a, drug_b, reaction_pt) triples")
@@ -2643,7 +2412,6 @@ def compute_pair_reaction_diagnostics(
     total_rows: int,
     counts_df: pd.DataFrame,
     case_stats_df: pd.DataFrame,
-    drug_id_mode: str,
     pair_role_filter: str,
 ) -> dict:
     n_cases_with_pairs = int(selected_pairs_df["caseid"].nunique())
@@ -2686,7 +2454,6 @@ def compute_pair_reaction_diagnostics(
         }
 
     return {
-        "drug_id_mode": drug_id_mode,
         "pair_role_filter": pair_role_filter,
         "n_selected_pair_rows": int(len(selected_pairs_df)),
         "n_case_reaction_rows": int(len(case_reactions_df)),
@@ -2718,7 +2485,6 @@ def compute_pair_reaction_diagnostics(
 def print_pair_reaction_diagnostics(diagnostics: dict) -> None:
     d = diagnostics
     print("\n  Pair-reaction count diagnostics:")
-    print(f"    drug_id_mode:                          {d['drug_id_mode']}")
     print(f"    pair_role_filter:                      {d['pair_role_filter']}")
     print(f"    selected pair rows (input):             {d['n_selected_pair_rows']:,}")
     print(f"    case reaction rows (input):             {d['n_case_reaction_rows']:,}")
@@ -2765,7 +2531,6 @@ def print_pair_reaction_diagnostics(diagnostics: dict) -> None:
 def run_case_pair_reactions_validation(
     row_validation_summary: dict,
     pair_role_filter: str,
-    drug_id_mode: str,
 ) -> None:
     """
     Validate case_pair_reactions from the per-chunk summary accumulated by
@@ -2788,8 +2553,6 @@ def run_case_pair_reactions_validation(
         failures.append(f"{s['n_self_pairs']:,} case_pair_reactions rows are self-pairs (drug_a == drug_b)")
     if s["n_duplicate_keys"]:
         failures.append(f"{s['n_duplicate_keys']:,} duplicate (caseid, drug_a, drug_b, reaction_pt) rows found")
-    if s["drug_id_modes_seen"] and s["drug_id_modes_seen"] != {drug_id_mode}:
-        failures.append(f"case_pair_reactions.drug_id_mode has value(s) {sorted(s['drug_id_modes_seen'])}, expected only {drug_id_mode!r}")
     if s["pair_role_filters_seen"] and s["pair_role_filters_seen"] != {pair_role_filter}:
         failures.append(f"case_pair_reactions.pair_role_filter has value(s) {sorted(s['pair_role_filters_seen'])}, expected only {pair_role_filter!r}")
     if pair_role_filter == "non_cc" and s["n_cc_pairs_seen_in_non_cc_mode"]:
@@ -2804,7 +2567,6 @@ def run_case_pair_reactions_validation(
     print("    - no self-pairs")
     print("    - no duplicate (caseid, drug_a, drug_b, reaction_pt)")
     print("    - every caseid present in both case_drug_pairs_selected and case_reactions (by construction)")
-    print("    - drug_id_mode consistent across all rows")
     print("    - pair_role_filter consistent across all rows")
     if pair_role_filter == "non_cc":
         print("    - non_cc mode: no row is classified as a C-C pair")
@@ -2826,7 +2588,7 @@ def run_drug_pair_reaction_counts_validation(
     """
     failures = []
 
-    required_cols = ["drug_a", "drug_b", "reaction_pt", "n_cases", "drug_id_mode", "pair_role_filter"]
+    required_cols = ["drug_a", "drug_b", "reaction_pt", "n_cases", "pair_role_filter"]
     missing_cols = [c for c in required_cols if c not in counts_df.columns]
     if missing_cols:
         failures.append(f"counts_df is missing required column(s): {missing_cols}")
@@ -2969,7 +2731,7 @@ def main() -> None:
         description=(
             "Corrected case-level FAERS preprocessing pipeline (NEW). "
             "Resolves CASEID/CASEVERSION so each real-world case is counted "
-            "once, ahead of drug-only R-GCN construction. Milestone 6: "
+            "once before annual drug-pair/reaction support is computed. Milestone 6: "
             "builds case_pair_reactions.parquet and "
             "drug_pair_reaction_counts.parquet (co-reporting counts only, "
             "NOT PRR/causal) from --pair-role-filter-selected pairs -- see "
@@ -3016,24 +2778,12 @@ def main() -> None:
         ),
     )
     parser.add_argument(
-        "--drug-id-mode", choices=DRUG_ID_MODES, default=DEFAULT_DRUG_ID_MODE,
-        help=(
-            "How mapped_drug_id is derived (Milestone 4c). 'decagon_idx' "
-            "(default, backward-compatible with Milestone 4b) restricts "
-            "mapped drugs to the old Decagon drug_to_idx.json universe and "
-            "uses its integer index as mapped_drug_id. 'chembl_id' "
-            "(RECOMMENDED for the new drug-only R-GCN pipeline) uses the "
-            "ChEMBL id string itself as mapped_drug_id, with no Decagon "
-            "universe restriction."
-        ),
-    )
-    parser.add_argument(
         "--pair-role-filter", choices=PAIR_ROLE_FILTERS, default=DEFAULT_PAIR_ROLE_FILTER,
         help=(
             "Which case_drug_pairs rows are written to "
             "case_drug_pairs_selected.parquet (Milestone 5d); does not "
             "modify case_drug_pairs.parquet itself. 'all_pairs' (default, "
-            "backward-compatible/fully auditable) keeps every pair. "
+            "fully auditable) keeps every pair. "
             "'non_cc' (RECOMMENDED for the thesis comparison) drops "
             "concomitant-concomitant (C-C) pairs, keeping only pairs with "
             "at least one PS/SS/I drug."
@@ -3053,31 +2803,7 @@ def main() -> None:
         "--max-rows", type=int, default=None,
         help="Limit DEMO/DRUG/REAC tables to the first N rows each. Smoke-testing only.",
     )
-    parser.add_argument(
-        "--compare-diagnostics", nargs=2, metavar=("DIAG_A_JSON", "DIAG_B_JSON"),
-        default=None,
-        help=(
-            "Skip the pipeline entirely and just print a side-by-side "
-            "comparison of two previously-saved drug_mapping_diagnostics.json "
-            "files (Milestone 4c requirement 11), e.g. one from a "
-            "--drug-id-mode decagon_idx run and one from a --drug-id-mode "
-            "chembl_id run on the same --max-rows sample."
-        ),
-    )
     args = parser.parse_args()
-
-    if args.compare_diagnostics:
-        path_a, path_b = args.compare_diagnostics
-        with open(path_a, encoding="utf-8") as f:
-            diag_a = json.load(f)
-        with open(path_b, encoding="utf-8") as f:
-            diag_b = json.load(f)
-        compare_drug_id_mode_diagnostics(
-            diag_a, diag_b,
-            label_a=diag_a.get("drug_id_mode", path_a),
-            label_b=diag_b.get("drug_id_mode", path_b),
-        )
-        return
 
     quarter = args.quarter or _infer_quarter_from_zip(args.faers_zip)
 
@@ -3086,14 +2812,13 @@ def main() -> None:
     print("=" * 60)
     print("This is the corrected, case-level pipeline. It resolves")
     print("CASEID/CASEVERSION instead of treating every PRIMARYID as an")
-    print("independent case. It does not modify process_faers.py.")
+    print("independent case and uses ChEMBL identifiers for mapped drugs.")
     print()
     print(f"  FAERS input:     {args.faers_dir or args.faers_zip}")
     print(f"  Input mode:      {'directory' if args.faers_dir else 'zip'}")
     print(f"  Quarter:         {quarter}")
     print(f"  Mapping file:    {args.mapping_file}")
     print(f"  Include fuzzy:   {args.include_fuzzy}")
-    print(f"  Drug ID mode:    {args.drug_id_mode}" + ("  (recommended for R-GCN)" if args.drug_id_mode == "chembl_id" else ""))
     print(f"  Pair role filter:{args.pair_role_filter}" + ("  (recommended for thesis comparison)" if args.pair_role_filter == "non_cc" else ""))
     print(f"  Output dir:      {args.out_dir}")
     if args.max_rows:
@@ -3145,14 +2870,14 @@ def main() -> None:
     print("\n--- Milestone 4: saving case_reactions artifacts ---")
     save_case_reactions_artifacts(args.out_dir, case_reactions_df, reaction_dedup_diagnostics)
 
-    print(f"\n--- Milestone 4c: build case_drugs (drug_id_mode={args.drug_id_mode}) ---")
+    print("\n--- Milestone 4c: build case_drugs (ChEMBL identifiers) ---")
     case_drugs_long_df, case_drugs_df, drug_mapping_diagnostics, unmapped_drugs_top_df = build_case_drugs(
-        resolved_drug_df, args.mapping_file, drug_id_mode=args.drug_id_mode, include_fuzzy=args.include_fuzzy,
+        resolved_drug_df, args.mapping_file, include_fuzzy=args.include_fuzzy,
     )
     print_drug_mapping_diagnostics(drug_mapping_diagnostics)
 
     print("\n--- Milestone 4c: case_drugs validation checks ---")
-    run_case_drugs_validation(resolved_drug_df, case_drugs_long_df, case_drugs_df, args.drug_id_mode)
+    run_case_drugs_validation(resolved_drug_df, case_drugs_long_df, case_drugs_df)
 
     print("\n--- Milestone 4c: saving case_drugs artifacts ---")
     save_case_drugs_artifacts(
@@ -3160,13 +2885,11 @@ def main() -> None:
     )
 
     print("\n--- Milestone 5: build case_drug_pairs ---")
-    case_drug_pairs_df, drug_pair_diagnostics, high_polypharmacy_df = build_case_drug_pairs(
-        case_drugs_df, args.drug_id_mode,
-    )
+    case_drug_pairs_df, drug_pair_diagnostics, high_polypharmacy_df = build_case_drug_pairs(case_drugs_df)
     print_drug_pair_diagnostics(drug_pair_diagnostics)
 
     print("\n--- Milestone 5: case_drug_pairs validation checks ---")
-    run_case_drug_pairs_validation(case_drugs_df, case_drug_pairs_df, args.drug_id_mode)
+    run_case_drug_pairs_validation(case_drugs_df, case_drug_pairs_df)
 
     print("\n--- Milestone 5: saving case_drug_pairs artifacts ---")
     save_case_drug_pairs_artifacts(
@@ -3187,7 +2910,7 @@ def main() -> None:
 
     print("\n--- Milestone 5c: role-aware pair audit ---")
     role_audit_df, role_audit_diagnostics = build_case_drug_pair_role_audit(
-        case_drug_pairs_df, case_drugs_df, args.drug_id_mode,
+        case_drug_pairs_df, case_drugs_df,
     )
     print_drug_pair_role_audit_diagnostics(role_audit_diagnostics)
 
@@ -3199,7 +2922,7 @@ def main() -> None:
 
     print(f"\n--- Milestone 5d: apply pair-role filter (pair_role_filter={args.pair_role_filter}) ---")
     selected_pairs_df, pair_filter_diagnostics = apply_pair_role_filter(
-        case_drug_pairs_df, role_audit_df, args.pair_role_filter, args.drug_id_mode,
+        case_drug_pairs_df, role_audit_df, args.pair_role_filter,
     )
     print_pair_role_filter_diagnostics(pair_filter_diagnostics)
 
@@ -3214,18 +2937,18 @@ def main() -> None:
     n_pair_reaction_rows, drug_pair_reaction_counts_df, pair_reaction_case_stats_df, row_validation_summary = (
         build_case_pair_reactions_chunked(
             selected_pairs_df, case_reactions_df, case_pair_reactions_path,
-            args.drug_id_mode, args.pair_role_filter,
+            args.pair_role_filter,
             max_rows_per_chunk=args.max_rows_per_join_chunk,
         )
     )
 
     print("\n--- Milestone 6: case_pair_reactions validation checks ---")
-    run_case_pair_reactions_validation(row_validation_summary, args.pair_role_filter, args.drug_id_mode)
+    run_case_pair_reactions_validation(row_validation_summary, args.pair_role_filter)
 
     print("\n--- Milestone 6: pair-reaction diagnostics ---")
     pair_reaction_diagnostics = compute_pair_reaction_diagnostics(
         selected_pairs_df, case_reactions_df, n_pair_reaction_rows, drug_pair_reaction_counts_df,
-        pair_reaction_case_stats_df, args.drug_id_mode, args.pair_role_filter,
+        pair_reaction_case_stats_df, args.pair_role_filter,
     )
     print_pair_reaction_diagnostics(pair_reaction_diagnostics)
 
@@ -3241,9 +2964,9 @@ def main() -> None:
     print("\n" + "=" * 60)
     print("Milestone 6 complete: case_pair_reactions.parquet and drug_pair_reaction_counts.parquet")
     print("(+ min3/min5/min10 support-filtered variants) built from case_drug_pairs_selected.parquet")
-    print(f"(drug_id_mode={args.drug_id_mode!r}, pair_role_filter={args.pair_role_filter!r}).")
-    print("These are CO-REPORTING counts only -- not PRR, not causal. No R-GCN")
-    print("export or train/validation/test split was performed yet.")
+    print(f"(ChEMBL identifiers, pair_role_filter={args.pair_role_filter!r}).")
+    print("These are CO-REPORTING counts only -- not PRR and not causal.")
+    print("No temporal features or train/validation/test split were produced.")
     print(f"Artifacts in: {args.out_dir}")
     print("Next: implement Milestone 7 (PRR / disproportionality statistics).")
     print("=" * 60)

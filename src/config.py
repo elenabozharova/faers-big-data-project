@@ -1,5 +1,5 @@
 """
-config.py -- Central configuration for decagon-preprocessing.
+Central configuration for FAERS temporal reporting-pattern preprocessing.
 
 Every value that differs between machines (file paths, DB credentials) is
 read from an environment variable with a sensible default that matches the
@@ -37,27 +37,6 @@ CHEMBL_DB_USER     = os.environ.get("CHEMBL_DB_USER",     "postgres")
 CHEMBL_DB_PASSWORD = os.environ.get("PGPASSWORD",         "")
 CHEMBL_DB_HOST     = os.environ.get("CHEMBL_DB_HOST",     "localhost")
 CHEMBL_DB_PORT     = int(os.environ.get("CHEMBL_DB_PORT", "5432"))
-
-# ---------------------------------------------------------------------------
-# STRING PPI
-# ---------------------------------------------------------------------------
-# Full path to the STRING physical-links file.
-# Default: data/raw/string/9606.protein.physical.links.v12.0.txt.gz
-STRING_PPI_PATH = os.environ.get(
-    "STRING_PPI_PATH",
-    os.path.join(DATA_RAW, "string", "9606.protein.physical.links.v12.0.txt.gz"),
-)
-
-# ---------------------------------------------------------------------------
-# UniProt ID mapping
-# ---------------------------------------------------------------------------
-# Full path to HUMAN_9606_idmapping.dat.gz.
-# process_string.py downloads this automatically on first run if absent.
-# Default: data/raw/uniprot/HUMAN_9606_idmapping.dat.gz
-UNIPROT_IDMAPPING_PATH = os.environ.get(
-    "UNIPROT_IDMAPPING_PATH",
-    os.path.join(DATA_RAW, "uniprot", "HUMAN_9606_idmapping.dat.gz"),
-)
 
 # ---------------------------------------------------------------------------
 # FAERS
