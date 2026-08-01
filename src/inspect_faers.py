@@ -1,7 +1,7 @@
 import zipfile
 import pandas as pd
 
-ZIP_PATH = r"C:\Users\bozha\source\repos\ds\decagon-preprocessing\data\raw\faers\faers_ascii_2025Q4.zip"
+ZIP_PATH = "data/raw/faers/faers_ascii_2025Q4.zip"
 
 # ---------- Helpers ----------
 def read_faers_table(inner_path: str, nrows: int = 100) -> pd.DataFrame:
@@ -32,7 +32,7 @@ def preview(df: pd.DataFrame, title: str, cols: list[str] | None = None) -> None
     df.head(100).to_csv(out_path, index=False)
     print(f"\nSaved: {out_path}")
 
-# ---------- Table configs (relevant fields for Decagon mirroring) ----------
+# ---------- Table configs ----------
 TABLES = {
     "FAERS DRUG (relevant fields)": {
         "inner": "ASCII/DRUG25Q4.txt",
@@ -47,7 +47,7 @@ TABLES = {
         "inner": "ASCII/DEMO25Q4.txt",
         "cols": ["primaryid", "caseid", "age", "age_cod", "sex", "wt", "wt_cod", "reporter_country"]
     },
-    # Optional: indications (not strictly required for Decagon mirroring, but useful)
+    # Optional: indications, useful for source-data inspection
     "FAERS INDI (optional)": {
         "inner": "ASCII/INDI25Q4.txt",
         "cols": ["primaryid", "caseid", "indi_pt"]  # often indi_pt or indi; script will warn if mismatch
