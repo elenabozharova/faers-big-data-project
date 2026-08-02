@@ -119,6 +119,17 @@ cannot overwrite default full reports. Raw ZIPs are never extracted or changed.
 
 ## Current status
 
+## Milestone 4A: global CASEID index
+
+```powershell
+python src/build_global_case_index.py --years 2023 2024 2025
+```
+
+This builds a DEMO-only cross-year assignment and winning-version audit index;
+it does not yet change annual pair/reaction processing. See
+[the resolution policy](docs/cross_year_case_resolution.md).
+
+
 Implemented:
 
 - FAERS table loading and diagnostics;

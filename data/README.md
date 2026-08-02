@@ -27,3 +27,7 @@ Raw archives can be profiled in place without extraction or modification:
 ```powershell
 python src/profile_faers_raw.py --years 2024
 ```
+
+Milestone 4A writes ignored Parquet indexes under
+`data/interim/case_resolution/`. Temporary SQLite work files are cleaned by
+default; `--keep-work-files` retains them for debugging.

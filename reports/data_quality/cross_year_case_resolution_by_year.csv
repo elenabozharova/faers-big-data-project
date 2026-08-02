@@ -1,0 +1,4 @@
+assigned_report_year,included_cases,cross_year_cases,cases_with_later_followups_in_loaded_data,cases_with_later_year_followups_in_loaded_data,fallback_assignments,outside_window_cases,excluded_no_eligible_version,selected_without_valid_caseversion
+2023,1361395,114435,121110,114435,0,0,7177,0
+2024,1308773,97638,107960,97638,0,0,10322,0
+2025,1295857,0,0,0,0,0,0,0
