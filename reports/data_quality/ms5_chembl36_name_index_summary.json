@@ -1,0 +1,32 @@
+{
+  "all_invariants_passed": true,
+  "ambiguous_normalized_names": 3160,
+  "blank_or_invalid_names_excluded": 787,
+  "chembl_version": 36,
+  "code_commit": "c37da083336f0fc946cf6a82eb5aaadb321d463b",
+  "created_at": "2026-08-02T13:43:29.191634+00:00",
+  "database_name": "chembl_36",
+  "index_artifact_version": "index_v1",
+  "index_rows": 150008,
+  "missing_chembl_ids_excluded": 0,
+  "normalization_version": "norm_v1",
+  "output_path": "data/interim/drug_mapping/chembl36_name_index_norm_v1_index_v1.parquet",
+  "output_sha256": "f8bc325ce77b33cded4948798de7e2be4c6d36534b2ba179a083603fb6b8a49c",
+  "preferred_source_rows": 49114,
+  "schema_name": "public",
+  "source_tables": [
+    "molecule_dictionary",
+    "molecule_synonyms",
+    "version"
+  ],
+  "synonym_source_rows": 132937,
+  "unique_chembl_ids": 50614,
+  "unique_normalized_names": 102527,
+  "version_evidence": "Bioassay Ontology 2.0 BAO version used for assays (http://bioassayontology.org/) COCONUT 2025-07 COCONUT version used for natural product flagging (https://coconut.naturalproducts.net/) ChEMBL_36 2025-07-28 00:00:00 ChEMBL Release 36 (https://www.ebi.ac.uk/chembl) ChEMBL_Structure_Pipeline 1.2.0 ChEMBL_Structure_Pipeline version used for chemical structure curation (https://github.com/chembl/ChEMBL_Structure_Pipeline) EFO 3.74.0 EFO version used for indication and warning data (https://www.ebi.a",
+  "version_table_columns": [
+    "name",
+    "creation_date",
+    "comments"
+  ],
+  "worktree_dirty": true
+}

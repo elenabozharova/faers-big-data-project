@@ -1,0 +1,5 @@
+primaryid,source_year,source_quarter,source_archive,reac_member,row_count,distinct_raw_caseids,sample_reaction_values
+243466102,2025,3,data/raw/faers/faers_ascii_2025Q3.zip,ASCII/REAC25Q3.txt,20,24346610,Ankylosing spondylitis|Asthenia|Asthma|Bronchitis|Cough|Dysphonia|Fatigue|Inappropriate schedule of product administration|Intentional dose omission|Malaise
+243466103,2025,4,data/raw/faers/faers_ascii_2025Q4.zip,ASCII/REAC25Q4.txt,20,24346610,Ankylosing spondylitis|Asthenia|Asthma|Bronchitis|Cough|Dysphonia|Fatigue|Inappropriate schedule of product administration|Intentional dose omission|Malaise
+243466122,2025,2,data/raw/faers/faers_ascii_2025Q2.zip,ASCII/REAC25Q2.txt,3,24346612,Hepatic failure|Hepatic steatosis|Renal failure
+243466125,2025,3,data/raw/faers/faers_ascii_2025Q3.zip,ASCII/REAC25Q3.txt,5,24346612,Haemorrhage|Hepatic failure|Localised oedema|Metabolic dysfunction-associated steatohepatitis|Renal failure

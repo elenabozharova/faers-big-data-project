@@ -1,0 +1,41 @@
+{
+  "absolute_paths_persisted": false,
+  "all_invariants_passed": true,
+  "artifact_version": "vocab_v1",
+  "blank_normalized_name_rows": 105,
+  "blank_selected_name_rows": 0,
+  "code_commit": "c37da083336f0fc946cf6a82eb5aaadb321d463b",
+  "combination_name_count": 8419,
+  "created_at": "2026-08-02T13:13:43.720124+00:00",
+  "distinct_case_count": 3966025,
+  "distinct_primaryid_count": 3966025,
+  "included_assignments_in_scope": 3966025,
+  "input_file_count": 3,
+  "input_files": [
+    "data/processed/faers_case_level_annual/2023/resolved_drug_rows.parquet",
+    "data/processed/faers_case_level_annual/2024/resolved_drug_rows.parquet",
+    "data/processed/faers_case_level_annual/2025/resolved_drug_rows.parquet"
+  ],
+  "input_hashes": {
+    "data/processed/faers_case_level_annual/2023/resolved_drug_rows.parquet": "23b19359262efeb1ca48de0c14ba03fde53ad961e0ca26a29e91e8d7831d9119",
+    "data/processed/faers_case_level_annual/2024/resolved_drug_rows.parquet": "ff588a9c1ab9e27f05d69a141038342a338b5ad793ff574382d90d1a84983ae1",
+    "data/processed/faers_case_level_annual/2025/resolved_drug_rows.parquet": "06249f8519432ec1a11347e4ce2802c78c16f1016b746e93e57305a5ca2a624b"
+  },
+  "input_row_count": 14714207,
+  "normalization_collision_count": 14972,
+  "normalization_version": "norm_v1",
+  "output_path": "data/interim/drug_mapping/multi_year_drug_vocabulary_2023_2025_norm_v1.parquet",
+  "requested_years": [
+    2023,
+    2024,
+    2025
+  ],
+  "sample_raw_names_limit": 10,
+  "study_end_year": 2025,
+  "study_start_year": 2023,
+  "temporary_files_remaining": 0,
+  "total_runtime_seconds": 345.541,
+  "unique_normalized_names": 94725,
+  "worktree_dirty": true,
+  "year_count": 3
+}

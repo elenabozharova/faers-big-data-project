@@ -1,0 +1,4 @@
+year,previous_annual_retained_cases,global_expected_cases,global_actual_retained_cases,removed_annual_appearances,cases_with_drug,cases_with_reac,cases_with_both,missing_drug,missing_reac
+2023,1544991,1361395,1361395,183596,1361395,1361395,1361395,0,0
+2024,1484350,1308773,1308773,175577,1308773,1308770,1308770,0,3
+2025,1469305,1295857,1295857,173448,1295857,1295857,1295857,0,0

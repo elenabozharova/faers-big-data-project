@@ -1,0 +1,4 @@
+year,resolved_drug_rows,distinct_caseids,distinct_primaryids,unique_selected_raw_names,unique_normalized_names,blank_prod_ai_rows,blank_drugname_rows,both_raw_fields_blank_rows,blank_chosen_name_rows,blank_normalized_name_rows,combination_normalized_names,runtime_seconds
+2023,4763980,1361395,1361395,54655,45293,107552,2,0,0,33,3384,106.234
+2024,5008214,1308773,1308773,49670,41365,89793,8,0,0,33,2970,120.668
+2025,4942013,1295857,1295857,57990,44875,89611,0,0,0,39,3862,115.206

@@ -1,0 +1,8 @@
+caseid,primaryid,caseversion,source_year,source_quarter,is_selected_primaryid,has_reac_rows,reac_row_count
+24346610,243466101,1,2024,3,True,False,0
+24346610,243466102,2,2025,3,False,True,20
+24346610,243466103,3,2025,4,False,True,20
+24346611,243466111,1,2024,3,True,False,0
+24346612,243466121,1,2024,3,True,False,0
+24346612,243466122,2,2025,2,False,True,3
+24346612,243466125,5,2025,3,False,True,5

@@ -1,0 +1,33 @@
+{
+  "absolute_paths_persisted": false,
+  "all_invariants_passed": true,
+  "ambiguous_combination_count": 826,
+  "ambiguous_count": 325,
+  "chembl_name_index": "data/interim/drug_mapping/chembl36_name_index_norm_v1_index_v1.parquet",
+  "chembl_name_index_sha256": "f8bc325ce77b33cded4948798de7e2be4c6d36534b2ba179a083603fb6b8a49c",
+  "chembl_version": 36,
+  "code_commit": "c37da083336f0fc946cf6a82eb5aaadb321d463b",
+  "created_at": "2026-08-02T13:49:08.323634+00:00",
+  "exact_pref_count": 5278,
+  "exact_synonym_count": 3346,
+  "input_files_modified": false,
+  "mapped_combination_count": 1345,
+  "mapping_artifact_version": "exact_v1",
+  "normalization_version": "norm_v1",
+  "partial_combination_count": 6248,
+  "requested_years": [
+    2023,
+    2024,
+    2025
+  ],
+  "single_id_mapped_rows": 13138103,
+  "single_id_mapped_unique_names": 8624,
+  "single_id_name_mapping_percentage": 9.1042,
+  "single_id_row_mapping_percentage": 89.2892,
+  "temporary_files_remaining": 0,
+  "unmatched_count": 77357,
+  "vocabulary_input": "data/interim/drug_mapping/multi_year_drug_vocabulary_2023_2025_norm_v1.parquet",
+  "vocabulary_row_count": 94725,
+  "vocabulary_sha256": "b1f81d1764803690a51ab96a72a2c85c4a8d4bce03086ec7a91e583b38a745a0",
+  "worktree_dirty": true
+}

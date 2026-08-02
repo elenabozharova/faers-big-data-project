@@ -1,0 +1,24 @@
+{
+  "absolute_paths_persisted": false,
+  "analytical_year": 2024,
+  "archives_scanned": 12,
+  "confirmed_missing_in_raw_reac": 1,
+  "identifier_normalization_errors": 0,
+  "integration_errors": 0,
+  "missing_selected_reac_cases_expected": 3,
+  "missing_selected_reac_cases_found": 3,
+  "provenance_errors": 0,
+  "raw_files_modified": false,
+  "raw_rows_scanned_or_chunks_processed": {
+    "chunks": 93,
+    "rows": 17296575
+  },
+  "reports": [
+    "reports/data_quality/ms4b_missing_reac_cases_2024.csv",
+    "reports/data_quality/ms4b_missing_reac_partition_occurrences_2024.csv",
+    "reports/data_quality/ms4b_missing_reac_case_versions_2024.csv",
+    "reports/data_quality/ms4b_missing_reac_audit_2024.json"
+  ],
+  "selected_version_missing_nonselected_available": 2,
+  "unclassified_cases": 0
+}

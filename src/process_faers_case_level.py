@@ -859,10 +859,13 @@ def load_drug_mapping_file(mapping_file: str) -> pd.DataFrame:
         )
     df = pd.read_parquet(mapping_file)
     print(f"  Loaded drug mapping: {len(df):,} rows from {mapping_file}")
-    n_dupe_normalized = int(df["normalized"].duplicated().sum())
+    key_column = "normalized_drug_name" if "normalized_drug_name" in df.columns else "normalized"
+    if key_column not in df.columns:
+        raise ValueError("drug mapping requires 'normalized_drug_name' (versioned) or 'normalized' (legacy)")
+    n_dupe_normalized = int(df[key_column].duplicated().sum())
     if n_dupe_normalized:
-        print(f"  [WARN] drug mapping has {n_dupe_normalized:,} duplicate 'normalized' rows; keeping first")
-        df = df.drop_duplicates(subset="normalized", keep="first")
+        print(f"  [WARN] drug mapping has {n_dupe_normalized:,} duplicate {key_column!r} rows; keeping first")
+        df = df.drop_duplicates(subset=key_column, keep="first")
     return df
 
 
@@ -878,7 +881,8 @@ def build_case_drugs(
     Per row: choose chosen_raw_name (Tier 0), normalize it (Tier 1) into
     normalized_drug_name, then classify mapping_status as one of:
       mapped / unmapped_blank_name / unmapped_no_match /
-      unmapped_ambiguous / excluded_fuzzy.
+      unmapped_ambiguous / excluded_fuzzy, plus explicit versioned-artifact
+      combination statuses that remain non-single-ID outcomes.
 
     mapped_drug_id is always the mapped ChEMBL identifier. No graph-node
     index or external drug universe is required.
@@ -904,28 +908,48 @@ def build_case_drugs(
         working.loc[~blank_name_mask, "chosen_raw_name"].apply(normalize_drug_string)
     )
 
-    mapping_lookup = mapping_df[["normalized", "chembl_id", "is_ambiguous", "match_method"]].rename(
-        columns={"normalized": "normalized_drug_name"}
+    key_column = "normalized_drug_name" if "normalized_drug_name" in mapping_df.columns else "normalized"
+    method_column = "mapping_method" if "mapping_method" in mapping_df.columns else "match_method"
+    lookup_columns = [key_column, "chembl_id", method_column]
+    for optional in ("is_ambiguous", "mapping_status"):
+        if optional in mapping_df.columns:
+            lookup_columns.append(optional)
+    mapping_lookup = mapping_df[lookup_columns].rename(
+        columns={key_column: "normalized_drug_name", method_column: "mapping_method_artifact"}
     )
     working = working.merge(mapping_lookup, on="normalized_drug_name", how="left", indicator="_merge_status")
 
     blank_name_mask = working["chosen_raw_name"].str.strip() == ""  # recompute post-merge for safe alignment
     has_match = working["_merge_status"] == "both"
     has_chembl_id = has_match & working["chembl_id"].notna()
-    is_ambiguous = has_chembl_id & working["is_ambiguous"].fillna(False).astype(bool)
-    is_fuzzy = has_chembl_id & (working["match_method"] == "fuzzy")
-    mapping_status = pd.Series("mapped", index=working.index, dtype=object)
-    mapping_status[blank_name_mask] = "unmapped_blank_name"
-    mapping_status[~blank_name_mask & ~has_chembl_id] = "unmapped_no_match"
-    mapping_status[~blank_name_mask & has_chembl_id & is_ambiguous] = "unmapped_ambiguous"
-    excluded_fuzzy_mask = ~blank_name_mask & has_chembl_id & ~is_ambiguous & is_fuzzy & (not include_fuzzy)
-    mapping_status[excluded_fuzzy_mask] = "excluded_fuzzy"
+    is_ambiguous = has_match & working.get("is_ambiguous", False)
+    if not isinstance(is_ambiguous, pd.Series):
+        is_ambiguous = pd.Series(False, index=working.index)
+    is_ambiguous = is_ambiguous.fillna(False).astype(bool)
+    is_fuzzy = has_chembl_id & (working["mapping_method_artifact"] == "fuzzy")
+    if "mapping_status" in working.columns:
+        mapping_status = working["mapping_status"].fillna("unmapped_no_match").astype(str)
+        invalid_mapped = mapping_status.eq("mapped") & ~has_chembl_id
+        if invalid_mapped.any():
+            raise ValueError("mapping artifact has mapping_status='mapped' with blank chembl_id")
+        mapping_status[blank_name_mask] = "unmapped_blank_name"
+    else:
+        # Explicit backward-compatibility path for the legacy artifact schema.
+        # Ambiguity is based on the artifact flag even though a correct
+        # ambiguous row has chembl_id=null; combo_all remains a no-match because
+        # that old schema has no unambiguous downstream combination contract.
+        mapping_status = pd.Series("mapped", index=working.index, dtype=object)
+        mapping_status[blank_name_mask] = "unmapped_blank_name"
+        mapping_status[~blank_name_mask & ~has_chembl_id] = "unmapped_no_match"
+        mapping_status[~blank_name_mask & is_ambiguous] = "unmapped_ambiguous"
+        excluded_fuzzy_mask = ~blank_name_mask & has_chembl_id & ~is_ambiguous & is_fuzzy & (not include_fuzzy)
+        mapping_status[excluded_fuzzy_mask] = "excluded_fuzzy"
     working["mapping_status"] = mapping_status
     mapped_mask = working["mapping_status"] == "mapped"
 
     working["mapped_drug_id"] = pd.NA
     working.loc[mapped_mask, "mapped_drug_id"] = working.loc[mapped_mask, "chembl_id"]
-    working["mapping_method"] = working["match_method"]
+    working["mapping_method"] = working["mapping_method_artifact"]
 
     case_drugs_long_df = working[
         [

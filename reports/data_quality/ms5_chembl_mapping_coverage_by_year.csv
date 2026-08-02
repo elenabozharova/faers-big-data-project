@@ -1,0 +1,5 @@
+year,eligible_drug_rows,invalid_or_ineligible_rows,eligible_unique_normalized_names,single_id_mapped_rows,single_id_unmapped_rows,single_id_mapped_unique_names,single_id_unmapped_unique_names,single_id_row_mapping_percentage,single_id_name_mapping_percentage,exact_pref_unique_names,exact_synonym_unique_names,mapped_combination_unique_names,mapped_combination_rows,ambiguous_unique_names,ambiguous_rows,unmatched_unique_names,unmatched_rows,partial_combination_unique_names,ambiguous_combination_unique_names
+2023,4763947,33,45293,4180212,583735,6434,38859,87.7468,14.2053,4347,2087,577,1262,240,39140,35235,535198,2463,344
+2024,5008181,33,41365,4458356,549825,6244,35121,89.0215,15.0949,4329,1915,507,1215,181,27342,31970,513580,2131,332
+2025,4941974,39,44875,4499535,442439,6269,38606,91.0473,13.9699,4384,1885,613,1414,192,31422,34552,401720,2867,382
+ALL,14714102,105,94725,13138103,1575999,8624,86101,89.2892,9.1042,5278,3346,1345,3891,325,97904,77357,1450498,6248,826

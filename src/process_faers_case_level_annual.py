@@ -1,9 +1,9 @@
 """
 process_faers_case_level_annual.py -- Annual FAERS case-level wrapper (POC).
 
-This is a thin orchestration layer around process_faers_case_level.py. It
-does NOT reimplement or modify any of that file's scientific logic --
-CASEID/CASEVERSION resolution, case-level reaction dedup, drug dedup,
+This is a thin orchestration layer around process_faers_case_level.py. MS4B
+uses the MS4A global CASEID assignment at the retained-row boundary; it does
+not reimplement or modify downstream scientific logic -- case-level reaction dedup, drug dedup,
 canonical pair generation, role-aware pair filtering, the chunked
 pair-reaction join, and support counting are all called as-is via
 `import process_faers_case_level as pfcl`.
@@ -49,6 +49,7 @@ Usage
 """
 
 import argparse
+import csv
 import glob
 import json
 import os
@@ -68,6 +69,7 @@ if _SRC_DIR not in sys.path:
 # Reused as-is (all pipeline logic; nothing in this module is copied or
 # reimplemented -- see file docstring).
 import process_faers_case_level as pfcl  # noqa: E402
+import integrate_global_case_assignments as ms4b  # noqa: E402
 
 # Assumption: quarterly FAERS zips live directly under data/raw/faers/,
 # named faers_ascii_<year><Q|q><1-4>.zip (observed casing is inconsistent,
@@ -79,6 +81,8 @@ import process_faers_case_level as pfcl  # noqa: E402
 FAERS_RAW_DIR = os.path.join(DATA_RAW, "faers")
 DEFAULT_OUT_DIR = os.path.join(DATA_PROCESSED, "faers_case_level_annual")
 DEFAULT_MAPPING_FILE = pfcl.DEFAULT_MAPPING_FILE
+DEFAULT_GLOBAL_ASSIGNMENTS = str(ms4b.DEFAULT_ASSIGNMENTS)
+DEFAULT_REPORT_DIR = str(ms4b.DEFAULT_REPORT_DIR)
 
 QUARTERS = ("Q1", "Q2", "Q3", "Q4")
 
@@ -166,6 +170,24 @@ def load_year_raw_tables(year: int, max_rows_per_quarter: int = None) -> tuple:
         f"DEMO={len(demo_df):,}  DRUG={len(drug_df):,}  REAC={len(reac_df):,} rows"
     )
     return demo_df, drug_df, reac_df
+
+
+def load_partition_table(
+    source_year: int,
+    source_quarter: int,
+    table_name: str,
+    max_rows: int = None,
+) -> pd.DataFrame:
+    """Load one physical DRUG/REAC partition selected by MS4A provenance."""
+    quarter = f"Q{int(source_quarter)}"
+    zip_path = _find_quarter_zip(int(source_year), quarter)
+    if zip_path is None:
+        raise FileNotFoundError(f"missing selected source archive for {source_year}{quarter}")
+    inner = _inner_paths(int(source_year), quarter)[table_name]
+    loader = pfcl.load_drug_table if table_name == "drug" else pfcl.load_reac_table
+    frame = loader(zip_path, None, inner, max_rows=max_rows)
+    frame["source_quarter"] = f"{source_year}{quarter}"
+    return frame
 
 
 # ---------------------------------------------------------------------------
@@ -274,6 +296,10 @@ def process_year(
     max_rows_per_join_chunk: int,
     max_rows_per_quarter: int = None,
     include_fuzzy: bool = False,
+    case_resolution_mode: str = "global",
+    global_assignments_df: pd.DataFrame = None,
+    report_dir: str = DEFAULT_REPORT_DIR,
+    case_resolution_only: bool = False,
 ) -> dict:
     t0 = time.time()
     year_out_dir = os.path.join(out_dir, str(year))
@@ -287,27 +313,53 @@ def process_year(
     if max_rows_per_quarter:
         print(f"  Max rows/quarter: {max_rows_per_quarter:,}  (TEST MODE)")
 
-    print(f"\n--- {year}: load + concatenate DEMO/DRUG/REAC across Q1-Q4 ---")
-    demo_df, drug_df, reac_df = load_year_raw_tables(year, max_rows_per_quarter)
+    if case_resolution_mode == "global":
+        if global_assignments_df is None:
+            raise ValueError("global mode requires global_assignments_df; no legacy fallback is permitted")
+        print(f"\n--- {year} MS4B: apply global assignments to exact DRUG/REAC partitions ---")
+        loader = lambda sy, sq, table: load_partition_table(sy, sq, table, max_rows_per_quarter)
+        retained_cases_df, resolved_drug_df, resolved_reac_df, integration_report = ms4b.integrate_year(
+            global_assignments_df, year, loader,
+        )
+        ms4b.write_integration_report(integration_report, report_dir)
+        demo_df = pd.DataFrame()
+        raw_diagnostics = {
+            "demo": {"n_rows": 0},
+            "drug": {"n_rows": integration_report["raw_drug_rows_scanned"]},
+            "reac": {"n_rows": integration_report["raw_reac_rows_scanned"]},
+        }
+        case_resolution_diagnostics = {
+            "n_retained_cases": len(retained_cases_df),
+            "n_drug_rows_resolved": len(resolved_drug_df),
+            "n_reac_rows_resolved": len(resolved_reac_df),
+        }
+    elif case_resolution_mode == "legacy-annual":
+        print(f"\n--- {year}: load + concatenate DEMO/DRUG/REAC across Q1-Q4 ---")
+        demo_df, drug_df, reac_df = load_year_raw_tables(year, max_rows_per_quarter)
+        print(f"\n--- {year} Milestone 2: raw-table diagnostics ---")
+        raw_diagnostics = pfcl.compute_raw_diagnostics(demo_df, drug_df, reac_df)
+        pfcl.print_raw_diagnostics(raw_diagnostics)
+        pfcl.save_raw_tables(year_out_dir, demo_df, drug_df, reac_df)
+        pfcl.save_raw_diagnostics(year_out_dir, raw_diagnostics)
+        print(f"\n--- {year} legacy: resolve CASEID/CASEVERSION within year ---")
+        retained_cases_df = pfcl.resolve_case_versions(demo_df)
+        resolved_drug_df = pfcl.filter_to_retained_primaryids(drug_df, retained_cases_df, "DRUG")
+        resolved_reac_df = pfcl.filter_to_retained_primaryids(reac_df, retained_cases_df, "REAC")
+        case_resolution_diagnostics = pfcl.compute_case_resolution_diagnostics(
+            demo_df, retained_cases_df, drug_df, resolved_drug_df, reac_df, resolved_reac_df,
+        )
+        pfcl.print_case_resolution_diagnostics(case_resolution_diagnostics)
+        pfcl.run_case_resolution_validation(demo_df, retained_cases_df, resolved_drug_df, resolved_reac_df)
+    else:
+        raise ValueError(f"unsupported case_resolution_mode: {case_resolution_mode}")
 
-    print(f"\n--- {year} Milestone 2: raw-table diagnostics ---")
-    raw_diagnostics = pfcl.compute_raw_diagnostics(demo_df, drug_df, reac_df)
-    pfcl.print_raw_diagnostics(raw_diagnostics)
-    pfcl.save_raw_tables(year_out_dir, demo_df, drug_df, reac_df)
-    pfcl.save_raw_diagnostics(year_out_dir, raw_diagnostics)
-
-    print(f"\n--- {year} Milestone 3: resolve CASEID/CASEVERSION (year-level) ---")
-    retained_cases_df = pfcl.resolve_case_versions(demo_df)
-    resolved_drug_df = pfcl.filter_to_retained_primaryids(drug_df, retained_cases_df, "DRUG")
-    resolved_reac_df = pfcl.filter_to_retained_primaryids(reac_df, retained_cases_df, "REAC")
-    case_resolution_diagnostics = pfcl.compute_case_resolution_diagnostics(
-        demo_df, retained_cases_df, drug_df, resolved_drug_df, reac_df, resolved_reac_df,
-    )
-    pfcl.print_case_resolution_diagnostics(case_resolution_diagnostics)
-    pfcl.run_case_resolution_validation(demo_df, retained_cases_df, resolved_drug_df, resolved_reac_df)
     pfcl.save_case_resolution_artifacts(
         year_out_dir, retained_cases_df, resolved_drug_df, resolved_reac_df, case_resolution_diagnostics,
     )
+    if case_resolution_only:
+        if case_resolution_mode != "global":
+            raise ValueError("--case-resolution-only is intended for MS4B global validation")
+        return integration_report
 
     print(f"\n--- {year} Milestone 4: build case_reactions ---")
     case_reactions_df, reaction_dedup_diagnostics = pfcl.build_case_reactions(resolved_reac_df)
@@ -385,6 +437,8 @@ def process_year(
         case_drugs_df, case_drug_pairs_df, selected_pairs_df,
         n_pair_reaction_rows, drug_pair_reaction_counts_df,
     )
+    if case_resolution_mode == "global":
+        summary.update(integration_report)
     summary_path = os.path.join(year_out_dir, "annual_summary.json")
     with open(summary_path, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
@@ -401,18 +455,31 @@ def process_year(
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Annual FAERS case-level wrapper (POC). Concatenates each "
-            "requested year's four quarterly DEMO/DRUG/REAC tables and runs "
-            "process_faers_case_level.py's existing pipeline functions "
-            "(unmodified) once per year, so CASEID/CASEVERSION resolution "
-            "isn't double-counted across quarter boundaries. See file "
-            "docstring for details and scope."
+            "Annual FAERS case-level wrapper. By default, applies MS4A global "
+            "CASEID selections to exact DRUG/REAC source partitions, then runs "
+            "the existing downstream transformations once per analytical year."
         )
     )
     parser.add_argument(
         "--years", type=int, nargs="+", required=True,
-        help="One or more years to process, e.g. --years 2023 2024 2025. "
-             "Each year requires all four quarterly zips to be present.",
+        help="One or more analytical years, e.g. --years 2023 2024 2025. "
+             "Selected physical source archives must be present.",
+    )
+    parser.add_argument(
+        "--case-resolution-mode", choices=("global", "legacy-annual"), default="global",
+        help="Global MS4A assignments are the active default; legacy annual DEMO resolution is explicit only.",
+    )
+    parser.add_argument(
+        "--global-case-assignments", default=DEFAULT_GLOBAL_ASSIGNMENTS,
+        help=f"MS4A global assignment parquet. Required in global mode. Default: {DEFAULT_GLOBAL_ASSIGNMENTS}",
+    )
+    parser.add_argument(
+        "--report-dir", default=DEFAULT_REPORT_DIR,
+        help=f"MS4B data-quality report directory. Default: {DEFAULT_REPORT_DIR}",
+    )
+    parser.add_argument(
+        "--case-resolution-only", action="store_true",
+        help="Stop after writing retained/resolved MS4B artifacts and integration reports.",
     )
     parser.add_argument(
         "--out-dir", default=DEFAULT_OUT_DIR,
@@ -444,6 +511,17 @@ def main() -> None:
 
     os.makedirs(args.out_dir, exist_ok=True)
 
+    global_assignments_df = None
+    if args.case_resolution_mode == "global":
+        global_assignments_df = ms4b.load_global_assignments(args.global_case_assignments)
+        requested = set(args.years)
+        expected = global_assignments_df[
+            global_assignments_df["assignment_status"].eq("included")
+            & global_assignments_df["assigned_report_year"].isin(requested)
+        ]
+        if expected["caseid"].duplicated().any():
+            raise AssertionError("included CASEID overlaps requested analytical years")
+
     all_summaries = []
     for year in args.years:
         summary = process_year(
@@ -454,6 +532,10 @@ def main() -> None:
             max_rows_per_join_chunk=args.max_rows_per_join_chunk,
             max_rows_per_quarter=args.max_rows_per_quarter,
             include_fuzzy=args.include_fuzzy,
+            case_resolution_mode=args.case_resolution_mode,
+            global_assignments_df=global_assignments_df,
+            report_dir=args.report_dir,
+            case_resolution_only=args.case_resolution_only,
         )
         all_summaries.append(summary)
 
@@ -461,6 +543,33 @@ def main() -> None:
     with open(combined_path, "w", encoding="utf-8") as f:
         json.dump(all_summaries, f, indent=2)
     print(f"\nSaved combined summary: {combined_path}")
+
+    if args.case_resolution_mode == "global":
+        previous = {2023: 1_544_991, 2024: 1_484_350, 2025: 1_469_305}
+        comparison_path = os.path.join(args.report_dir, "ms4b_global_assignment_comparison.csv")
+        os.makedirs(args.report_dir, exist_ok=True)
+        with open(comparison_path, "w", newline="", encoding="utf-8") as stream:
+            fields = ["year", "previous_annual_retained_cases", "global_expected_cases",
+                      "global_actual_retained_cases", "removed_annual_appearances", "cases_with_drug",
+                      "cases_with_reac", "cases_with_both", "missing_drug", "missing_reac"]
+            writer = csv.DictWriter(stream, fieldnames=fields)
+            writer.writeheader()
+            for item in all_summaries:
+                year = int(item.get("analytical_year", item.get("year")))
+                actual = int(item.get("retained_cases_written", item.get("retained_cases")))
+                old = previous.get(year)
+                writer.writerow({
+                    "year": year, "previous_annual_retained_cases": old,
+                    "global_expected_cases": item.get("included_assignments_expected", actual),
+                    "global_actual_retained_cases": actual,
+                    "removed_annual_appearances": old - actual if old is not None else "",
+                    "cases_with_drug": item.get("selected_cases_with_drug", ""),
+                    "cases_with_reac": item.get("selected_cases_with_reac", ""),
+                    "cases_with_both": item.get("selected_cases_with_both", ""),
+                    "missing_drug": item.get("selected_cases_missing_drug", ""),
+                    "missing_reac": item.get("selected_cases_missing_reac", ""),
+                })
+        print(f"Saved MS4B comparison: {comparison_path}")
 
 
 if __name__ == "__main__":
