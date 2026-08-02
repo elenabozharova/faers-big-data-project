@@ -1,0 +1,111 @@
+{
+  "archives_loaded": 12,
+  "archives_requested": 12,
+  "assigned_by_earliest_fda_dt": 0,
+  "assigned_by_first_observed_partition": 0,
+  "assigned_by_init_fda_dt": 4230410,
+  "assigned_outside_study_window": 246886,
+  "assignment_output": "data/interim/case_resolution/global_case_assignments.parquet",
+  "assignment_output_rows": 4230410,
+  "cases_by_assigned_year": {
+    "2023": 1361395,
+    "2024": 1308773,
+    "2025": 1295857
+  },
+  "cases_by_assignment_method": {
+    "init_fda_dt": 4230410
+  },
+  "cases_by_assignment_status": {
+    "assigned_outside_study_window": 246886,
+    "excluded_no_eligible_version": 17499,
+    "included": 3966025
+  },
+  "cases_by_version_count": {
+    "1": 3709727,
+    "10": 76,
+    "11": 12,
+    "12": 2,
+    "2": 418812,
+    "3": 68539,
+    "4": 19646,
+    "5": 7444,
+    "6": 3445,
+    "7": 1681,
+    "8": 745,
+    "9": 281
+  },
+  "cases_seen_in_multiple_years": 248711,
+  "cases_seen_in_one_year": 3981699,
+  "cases_selected_without_valid_caseversion": 0,
+  "cases_with_additional_versions_in_loaded_data": 520805,
+  "cases_with_invalid_caseversions": 0,
+  "cases_with_later_followups_in_loaded_data": 475956,
+  "cases_with_later_year_followups_in_loaded_data": 248711,
+  "cases_with_missing_caseversions": 0,
+  "cases_with_multiple_primaryids": 520683,
+  "cases_with_multiple_valid_versions": 520683,
+  "chunk_size": 250000,
+  "critical_identifier_conflicts": 0,
+  "current_per_year_equivalence_verified": true,
+  "deduplicated_demo_rows": 4910746,
+  "exact_duplicate_rows_removed": 0,
+  "excluded_critical_conflict": 0,
+  "excluded_no_assignment_year": 0,
+  "excluded_no_eligible_version": 17499,
+  "followup_metric_scopes": {
+    "cases_removed_as_cross_year_followups": "annual appearance count: CASEID is physically present in that source year and globally assigned to an earlier year",
+    "cases_seen_in_multiple_years": "all resolvable CASEIDs observed in more than one loaded source_year",
+    "cases_with_additional_versions_in_loaded_data": "all assignment statuses with more than one deduplicated DEMO observation",
+    "cases_with_later_followups_in_loaded_data": "legacy all-status audit count with any source_year greater than assigned_report_year; may include a single loaded source year",
+    "cases_with_later_year_followups_in_loaded_data": "all assignment statuses observed in multiple loaded source years and with at least one source_year greater than assigned_report_year"
+  },
+  "generated_at_utc": "2026-08-01T18:36:53.584969Z",
+  "included_cases": 3966025,
+  "init_fda_dt_conflicts": 0,
+  "invariant_results": {
+    "assignment_output_rows_match_counter": true,
+    "at_most_one_assigned_year_per_caseid": true,
+    "critical_conflict_not_clean": true,
+    "every_selected_exists_in_version_index": true,
+    "included_has_selected_primaryid": true,
+    "later_year_followups_subset_of_multi_year_cases": true,
+    "no_eligible_has_no_selected_primaryid": true,
+    "one_assignment_per_caseid": true,
+    "one_selected_version_per_included_caseid": true,
+    "outside_window_not_included": true,
+    "selected_source_year_eligible": true,
+    "version_output_rows_match_counter": true
+  },
+  "is_sampled": false,
+  "output_directory": "data/interim/case_resolution",
+  "phase_runtimes": {
+    "assignment_export_seconds": 61.088,
+    "conflict_detection_seconds": 0.605,
+    "index_build_seconds": 7.93,
+    "ingestion_seconds": 698.786,
+    "report_seconds": 0.3,
+    "resolution_seconds": 98.679,
+    "total_runtime_seconds": 911.153,
+    "version_export_seconds": 43.76
+  },
+  "raw_demo_rows": 4910746,
+  "raw_directory": "data/raw/faers",
+  "requested_quarters": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "requested_years": [
+    2023,
+    2024,
+    2025
+  ],
+  "runtime_seconds": 911.153,
+  "source_manifest": "config/faers_sources.csv",
+  "unique_caseids": 4230410,
+  "version_chronology_conflicts": 0,
+  "version_gap_cases": 124574,
+  "version_output": "data/interim/case_resolution/global_demo_versions.parquet",
+  "version_output_rows": 4910746
+}

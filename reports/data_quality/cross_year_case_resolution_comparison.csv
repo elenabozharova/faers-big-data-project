@@ -1,0 +1,4 @@
+year,raw_unique_caseids_seen_in_year,current_per_year_selected_cases,global_cases_assigned_to_year,difference_global_minus_current,cases_removed_as_cross_year_followups,cases_assigned_outside_window,cases_excluded_no_eligible_version,cases_using_assignment_fallback
+2023,1544991,1544991,1361395,-183596,183596,0,7177,0
+2024,1484350,1484350,1308773,-175577,175577,0,10322,0
+2025,1469305,1469305,1295857,-173448,173448,0,0,0
