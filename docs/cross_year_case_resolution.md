@@ -45,6 +45,26 @@ data-quality report. Follow-up audit fields are never inclusion criteria.
 Reaction normalization, drug normalization and ChEMBL mapping, case-level
 deduplication, pair construction, and support aggregation remain unchanged.
 
+## End-to-end production closure
+
+MS4B is complete and production-validated end to end for 2023-2025. The final
+downstream run reused the validated retained/resolved boundary as immutable
+input and published results separately under
+`data/processed/faers_case_level_annual_final/`. Reused boundary files are
+same-volume hard links, so their exact bytes and hashes are preserved without
+duplicating storage.
+
+Retained cases reconciled exactly to 1,361,395 in 2023, 1,308,773 in 2024,
+and 1,295,857 in 2025. No resolved or downstream row contained an unexpected
+CASEID or nonselected PRIMARYID, no CASEID crossed analytical years, and every
+downstream case population was a subset of its retained population. The
+before/after hashes of global assignments, all retained/resolved inputs, the
+12 raw ZIPs, and the final MS5 mapping were identical.
+
+The dedicated closure reports are
+`reports/data_quality/ms4b_downstream_validation_by_year.csv` and
+`reports/data_quality/ms4b_downstream_validation_summary.json`.
+
 ## Missing selected REAC audit
 
 The MS4B production integration found three selected 2024 cases without a

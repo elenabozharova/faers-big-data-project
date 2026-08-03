@@ -1,0 +1,4 @@
+year,retained_cases,cases_with_drug_rows,cases_with_zero_single_id_mapped_drugs,cases_with_one_single_id_mapped_drug,cases_with_at_least_two_single_id_mapped_drugs,cases_with_combination_only_mappings,cases_with_ambiguous_only_mappings,cases_with_no_usable_drug_name
+2023,1361395,1361395,108081,803902,449412,7,3736,0
+2024,1308773,1308773,78081,804854,425838,11,3054,0
+2025,1295857,1295857,64701,803749,427407,7,4460,0

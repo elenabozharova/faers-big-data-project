@@ -1,0 +1,4 @@
+year,expected_included_assignments,retained_cases,resolved_drug_caseids,resolved_reac_caseids,case_reaction_caseids,case_drug_caseids,case_pair_caseids,pair_reaction_caseids,missing_drug_cases,missing_reac_cases,unexpected_caseids,unexpected_primaryids,nonselected_primaryids,cross_year_caseid_overlap,downstream_caseid_subset_violations,validation_status
+2023,1361395,1361395,1361395,1361395,1289464,1253314,449412,434523,0,0,0,0,0,0,0,passed
+2024,1308773,1308773,1308773,1308770,1232194,1230692,425838,410000,0,3,0,0,0,0,0,passed
+2025,1295857,1295857,1295857,1295857,1226211,1231156,427407,414436,0,0,0,0,0,0,0,passed

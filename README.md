@@ -14,10 +14,10 @@ such as `CHEMBL25`.
 | MS2 | Complete: reproducible raw FAERS acquisition and provenance |
 | MS3 | Complete: raw schema and quality profiling |
 | MS4A | Complete and production-validated: global cross-year CASEID resolution |
-| MS4B | Implemented and validated through the resolved DRUG/REAC boundary; the downstream pair-reaction rebuild remains deferred |
+| MS4B | Complete and production-validated end to end |
 | MS5 | Complete and production-validated for 2023-2025: reusable multi-year drug vocabulary and conservative versioned exact mapping to ChEMBL 36 |
-| MS6 | Next: regenerate annual drug-pair-reaction datasets from the MS4B population and MS5 mapping |
-| MS7 and later | Pending |
+| MS6 | Complete and production-validated for 2023-2025: final annual drug-pair-reaction support datasets |
+| MS7 and later | Pending; not started |
 
 ## Pipeline overview
 
@@ -32,7 +32,8 @@ FAERS quarterly archives
 -> verified ChEMBL 36 preferred-name and synonym index
 -> versioned exact FAERS-to-ChEMBL mapping
 -> annual mapping coverage reports
--> MS6 pair-reaction rebuild (next)
+-> final globally corrected annual pair-reaction support datasets
+-> MS7 temporal modeling dataset (pending)
 ```
 
 MS4A assigns each CASEID once and selects one eligible version globally.
@@ -91,10 +92,11 @@ python src/build_global_case_index.py --years 2023 2024 2025
 python src/process_faers_case_level_annual.py --years 2023 2024 2025
 ```
 
-MS4A is complete and production-validated. MS4B is implemented and validated
-through the corrected annual `resolved_drug_rows.parquet` and
-`resolved_reaction_rows.parquet` boundary. Its expensive downstream annual
-drug-pair-reaction rebuild remains deliberately deferred to MS6.
+MS4A and MS4B are complete and production-validated end to end. The deferred
+downstream closure reused the corrected annual `retained_cases.parquet`,
+`resolved_drug_rows.parquet`, and `resolved_reac_rows.parquet` files without
+rerunning raw integration, then proved that every downstream CASEID remained
+inside its globally assigned annual population.
 
 ## MS5 - Multi-Year Drug Vocabulary and Exact ChEMBL Mapping
 
@@ -361,14 +363,35 @@ documentation should be committed together only after production validation.
 Generated large Parquet artifacts remain excluded according to the repository
 data policy.
 
-## Next: MS6 - Final annual drug-pair-reaction datasets
+## MS6 - Final annual drug-pair-reaction datasets
 
-MS6 will regenerate the final annual drug-pair-reaction datasets using the
-globally resolved MS4B case population and the versioned MS5 ChEMBL mapping
-artifact. It will evaluate case usability as:
+MS6 is complete and production-validated for 2023-2025. It reused the immutable
+MS4B boundary, applied the versioned MS5 exact mapping with fuzzy mappings
+disabled, retained only ordinary single-ID mappings, generated deterministic
+unordered pairs under the existing `all_pairs` policy, joined pairs to
+case-level reactions in bounded chunks, and counted distinct contributing
+CASEIDs.
 
-- cases with zero mapped unique drugs;
-- cases with one mapped unique drug; and
-- cases with at least two mapped unique drugs.
+| Year | Cases with >=2 mapped drugs | Pair rows | Pair-reaction rows | Unique patterns | Min3 | Min5 | Min10 |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 2023 | 449,412 | 11,134,568 | 133,383,154 | 23,256,862 | 6,393,185 | 4,234,914 | 2,390,729 |
+| 2024 | 425,838 | 13,313,358 | 259,927,804 | 25,346,924 | 7,067,742 | 4,789,551 | 3,012,592 |
+| 2025 | 427,407 | 14,122,469 | 209,952,427 | 28,871,255 | 8,434,213 | 5,658,578 | 3,326,862 |
 
-These MS6 outputs have not been implemented or claimed in MS5.
+Authoritative outputs are under
+`data/processed/faers_case_level_annual_final/<year>/`. The production run used
+`data/processed/mappings/faers_to_chembl_2023_2025_chembl36_norm_v1_exact_v1.parquet`
+with SHA-256
+`e4e28c86dea312c262ce9ab92c006430817d6c1dbfb0a348a33e1dab39d408a5`.
+All raw ZIP, global-assignment, mapping, and reused boundary hashes remained
+unchanged. See
+[MS6 annual pair-reaction rebuild](docs/ms6_annual_pair_reaction_rebuild.md)
+for usability counts, performance, validations, legacy availability, and
+reproduction details. Final repository validation passed 77 unit tests, Python
+compilation, both production CLI help checks, dependency checks, and Git diff
+hygiene.
+
+## Next milestone
+
+MS7 has not started. No lag features, temporal Gold table, modeling, or Spark
+work was introduced during MS6.

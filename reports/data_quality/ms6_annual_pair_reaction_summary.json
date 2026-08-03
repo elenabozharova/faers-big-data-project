@@ -1,0 +1,20 @@
+{
+  "all_ms6_invariants_passed": true,
+  "absolute_paths_persisted": false,
+  "code_commit": "4ff73afafcb3c82638e5a8d5f6bf15dfc3f5882d",
+  "created_at": "2026-08-02T15:28:55.563513+00:00",
+  "mapping_artifact": "data/processed/mappings/faers_to_chembl_2023_2025_chembl36_norm_v1_exact_v1.parquet",
+  "mapping_artifact_sha256": "e4e28c86dea312c262ce9ab92c006430817d6c1dbfb0a348a33e1dab39d408a5",
+  "max_rows_per_join_chunk": 2000000,
+  "observed_peak_memory_mb": 17960.96,
+  "output_root": "data/processed/faers_case_level_annual_final",
+  "pair_role_filter": "all_pairs",
+  "production_rebuild_completed": true,
+  "temporary_files_remaining": 0,
+  "worktree_dirty": true,
+  "years": [
+    2023,
+    2024,
+    2025
+  ]
+}
