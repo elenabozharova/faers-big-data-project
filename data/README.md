@@ -36,3 +36,7 @@ Milestone 7 publishes the canonical five-column analytical dataset under
 `data/gold/annual_pair_reactions/year=<year>/`. Gold partitions are generated
 artifacts and should be rebuilt from validated MS6 annual aggregates rather
 than edited directly.
+
+Milestone 8 publishes the Stage 3 temporal feature pilot under
+`data/gold/temporal_pair_reaction_features/target_year=<year>/`. These ignored
+Parquet partitions are rebuilt from the canonical MS7 Gold inputs.

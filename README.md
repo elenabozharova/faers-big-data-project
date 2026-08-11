@@ -18,7 +18,8 @@ such as `CHEMBL25`.
 | MS5 | Complete and production-validated for 2023-2025: reusable multi-year drug vocabulary and conservative versioned exact mapping to ChEMBL 36 |
 | MS6 | Complete and production-validated for 2023-2025: final annual drug-pair-reaction support datasets |
 | MS7 | Complete and production-validated for 2023-2025: canonical partitioned annual pair-reaction Gold dataset |
-| MS8 and later | Pending; not started |
+| MS8 | Complete and production-validated for the 2023-2025 Stage 3 pilot: leakage-safe temporal features and recurrence targets |
+| MS9 and later | Pending; not started |
 
 ## Pipeline overview
 
@@ -402,7 +403,30 @@ MS7 is complete and production-validated for 2023-2025. It publishes exactly
 identifier, partition-year, nullability, and global CASEID assignment
 invariants passed. See [MS7 Gold dataset](docs/ms7_gold_annual_pair_reactions.md).
 
+## MS8 - Temporal recurrence feature pilot
+
+MS8 is complete and production-validated for the Stage 3 pilot. It generated
+62,245,721 candidate rows under
+`data/gold/temporal_pair_reaction_features/`, partitioned by target year. The
+candidate population contains tuples observed at least once before the target
+year; tuples first appearing in the target year are excluded as cold starts.
+All features use history strictly before the target year, and unavailable pilot
+lags are null rather than false zero observations. See
+`reports/data_quality/ms8_temporal_features_validation.json`.
+
 ## Next milestone
 
-MS8 has not started. No lag features, recurrence labels, temporal train/test
-splits, predictive models, or Spark work are part of MS7.
+MS9 and later have not started. The required post-MS7 sequence is documented
+in [Post-MS7 temporal modeling and Spark requirements](docs/post_ms7_temporal_modeling_requirements.md):
+
+1. Implement an always-negative baseline, previous-year persistence rule,
+   support-threshold rule, logistic regression, and optionally
+   gradient-boosted trees, in that order.
+2. Complete the Stage 4 historical expansion for 2013-2022 after the pilot
+   pipeline works end to end.
+3. Port the expensive data-engineering stages to Spark and benchmark the local
+   pipeline against Spark over increasing year ranges.
+
+The expanded 2013-2022 history remains required before declaring the full
+three-lag modeling dataset production-complete for the intended historical
+study.

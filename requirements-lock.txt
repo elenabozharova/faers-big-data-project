@@ -2,6 +2,7 @@
 pandas==3.0.5
 psycopg2-binary==2.9.12
 pyarrow==25.0.0
+duckdb==1.5.5
 python-dateutil==2.9.0.post0
 six==1.17.0
 tzdata==2026.3
