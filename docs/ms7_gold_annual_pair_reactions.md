@@ -1,6 +1,6 @@
-# MS7 canonical annual pair-reaction Gold dataset
+# MS7A canonical annual pair-reaction Gold dataset
 
-MS7 publishes the stable analytical boundary consumed by future temporal
+MS7A publishes the stable analytical boundary consumed by future temporal
 feature engineering and modeling. It does not create lag features, labels,
 train/test splits, or models.
 

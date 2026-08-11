@@ -1,8 +1,9 @@
-# Post-MS7 temporal modeling and Spark requirements
+# MS7B/MS7C temporal modeling and MS8 PySpark requirements
 
-This document defines the required work after the canonical MS7 Gold dataset.
-MS8 is implemented and production-validated for the Stage 3 pilot. MS9,
-Stage 4 historical expansion, and MS10 remain pending.
+This document defines the required work after the canonical MS7A Gold
+dataset. MS7B is implemented and production-validated for the Stage 3 pilot.
+MS7C, Stage 4 historical expansion, and
+MS8 PySpark work remain pending.
 
 ## Staged data rollout
 
@@ -24,8 +25,8 @@ Use all quarters from 2023-2025. This pilot is intended to exercise:
 - drug-mapping coverage; and
 - preliminary feature generation.
 
-MS2-MS7 are currently production-validated for this pilot window. MS8 may use
-it to implement and validate preliminary feature logic. Within this window,
+MS2 through MS7A are production-validated for this pilot window. MS7B uses
+it to implement and validate preliminary temporal logic. Within this window,
 2024 can have one prior-year lag and 2025 can have two prior-year lags. A
 three-prior-year row is not available unless an earlier year is added or 2026
 becomes available, so unavailable lags must be represented and documented
@@ -35,11 +36,11 @@ explicitly rather than silently treated as observed zero counts.
 
 After the 2023-2025 pipeline and preliminary features work end to end, ingest
 and process 2013-2022 through the same validated milestone contracts. Rebuild
-the multi-year mapping, annual MS6 aggregates, and MS7 Gold partitions for the
+the multi-year mapping, annual MS6 aggregates, and MS7A Gold partitions for the
 expanded range before producing the full historical feature and modeling
 datasets.
 
-## MS8 - Temporal features and recurrence target
+## MS7B - Temporal features and recurrence target
 
 For every target year `t`, features must use observations strictly before `t`.
 The binary target is derived only from whether the tuple is observed in `t`:
@@ -83,7 +84,7 @@ unavailable lag from an observed year with zero support.
 
 ### Stage 3 production result
 
-The MS8 builder uses DuckDB for bounded-memory Parquet aggregation and
+The MS7B feature builder uses DuckDB for bounded-memory Parquet aggregation and
 publishes Hive-style partitions under
 `data/gold/temporal_pair_reaction_features/`.
 
@@ -106,7 +107,11 @@ python src/build_temporal_features.py `
   --target-years 2024-2025
 ```
 
-## MS9 - Baselines and statistical model
+## MS7C - Baselines and statistical model
+
+The complete milestone definition, acceptance criteria, evaluation protocol,
+and artifact contract are maintained in the
+[MS7C Confluence-ready specification](ms7c_modeling_confluence.md).
 
 Models must be implemented and evaluated in this order:
 
@@ -121,7 +126,7 @@ Random row splitting is not acceptable for the primary temporal evaluation.
 Model comparisons must use the same eligible population and report metrics
 appropriate for a likely imbalanced recurrence target.
 
-## MS10 - Spark engineering and benchmarks
+## MS8 - PySpark implementation and benchmark
 
 Spark work must port the expensive data-engineering stages, not merely train a
 model from an already-small feature table. The required Spark scope is:

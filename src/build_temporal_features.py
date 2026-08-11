@@ -1,4 +1,4 @@
-"""Build leakage-safe MS8 temporal recurrence features from MS7 Gold Parquet."""
+"""Build leakage-safe MS7B temporal features from MS7A Gold Parquet."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ import duckdb
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_GOLD_ROOT = ROOT / "data/gold/annual_pair_reactions"
 DEFAULT_OUTPUT_ROOT = ROOT / "data/gold/temporal_pair_reaction_features"
-DEFAULT_REPORT = ROOT / "reports/data_quality/ms8_temporal_features_validation.json"
+DEFAULT_REPORT = ROOT / "reports/data_quality/ms7b_temporal_features_validation.json"
 KEYS = ["drug_a", "drug_b", "reaction_pt"]
 FEATURE_COLUMNS = [
     "target_year", *KEYS, "count_t1", "count_t2", "count_t3",
@@ -44,7 +44,7 @@ def _sql_path(path: Path) -> str:
 def _source_file(gold_root: Path, year: int) -> Path:
     path = gold_root / f"year={year}" / "part-00000.parquet"
     if not path.is_file():
-        raise FileNotFoundError(f"MS7 Gold partition missing for {year}: {path}")
+        raise FileNotFoundError(f"MS7A Gold partition missing for {year}: {path}")
     return path
 
 
@@ -142,7 +142,7 @@ def build_features(
 
     output_root.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=f".{output_root.name}-", dir=output_root.parent))
-    database = staging / "ms8_work.duckdb"
+    database = staging / "ms7b_work.duckdb"
     connection = duckdb.connect(str(database))
     connection.execute(f"SET memory_limit = '{memory_limit}'")
     connection.execute(f"SET threads = {int(threads)}")
@@ -165,7 +165,7 @@ def build_features(
         connection.close()
         database.unlink(missing_ok=True)
         metadata = {
-            "milestone": "MS8",
+            "milestone": "MS7B",
             "status": "stage_3_pilot",
             "created_at_utc": datetime.now(timezone.utc).isoformat(),
             "candidate_population": "tuples observed at least once before target_year",
@@ -192,7 +192,7 @@ def build_features(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Build MS8 leakage-safe temporal recurrence features from MS7 Gold data.")
+    parser = argparse.ArgumentParser(description="Build MS7B leakage-safe temporal features from MS7A Gold data.")
     parser.add_argument("--available-years", nargs="+", required=True)
     parser.add_argument("--target-years", nargs="+", required=True)
     parser.add_argument("--gold-root", type=Path, default=DEFAULT_GOLD_ROOT)
@@ -207,7 +207,7 @@ def main() -> int:
         args.gold_root, args.output_root, args.report, args.overwrite,
         args.memory_limit, args.threads,
     )
-    print(f"MS8 pilot features published: {result['total_rows']:,} rows")
+    print(f"MS7B pilot features published: {result['total_rows']:,} rows")
     return 0
 
 
