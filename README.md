@@ -17,7 +17,8 @@ such as `CHEMBL25`.
 | MS4B | Complete and production-validated end to end |
 | MS5 | Complete and production-validated for 2023-2025: reusable multi-year drug vocabulary and conservative versioned exact mapping to ChEMBL 36 |
 | MS6 | Complete and production-validated for 2023-2025: final annual drug-pair-reaction support datasets |
-| MS7 and later | Pending; not started |
+| MS7 | Complete and production-validated for 2023-2025: canonical partitioned annual pair-reaction Gold dataset |
+| MS8 and later | Pending; not started |
 
 ## Pipeline overview
 
@@ -33,7 +34,8 @@ FAERS quarterly archives
 -> versioned exact FAERS-to-ChEMBL mapping
 -> annual mapping coverage reports
 -> final globally corrected annual pair-reaction support datasets
--> MS7 temporal modeling dataset (pending)
+-> canonical partitioned MS7 Gold dataset
+-> temporal feature engineering and modeling (pending)
 ```
 
 MS4A assigns each CASEID once and selects one eligible version globally.
@@ -391,7 +393,16 @@ reproduction details. Final repository validation passed 77 unit tests, Python
 compilation, both production CLI help checks, dependency checks, and Git diff
 hygiene.
 
+## MS7 - Canonical annual pair-reaction Gold dataset
+
+MS7 is complete and production-validated for 2023-2025. It publishes exactly
+`year`, `drug_a`, `drug_b`, `reaction_pt`, and `n_cases` under
+`data/gold/annual_pair_reactions/year=<year>/`. The three partitions contain
+77,475,041 rows in total. All pair ordering, support, key uniqueness, ChEMBL
+identifier, partition-year, nullability, and global CASEID assignment
+invariants passed. See [MS7 Gold dataset](docs/ms7_gold_annual_pair_reactions.md).
+
 ## Next milestone
 
-MS7 has not started. No lag features, temporal Gold table, modeling, or Spark
-work was introduced during MS6.
+MS8 has not started. No lag features, recurrence labels, temporal train/test
+splits, predictive models, or Spark work are part of MS7.

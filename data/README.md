@@ -31,3 +31,8 @@ python src/profile_faers_raw.py --years 2024
 Milestone 4A writes ignored Parquet indexes under
 `data/interim/case_resolution/`. Temporary SQLite work files are cleaned by
 default; `--keep-work-files` retains them for debugging.
+
+Milestone 7 publishes the canonical five-column analytical dataset under
+`data/gold/annual_pair_reactions/year=<year>/`. Gold partitions are generated
+artifacts and should be rebuilt from validated MS6 annual aggregates rather
+than edited directly.
