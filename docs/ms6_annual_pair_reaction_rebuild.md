@@ -12,7 +12,7 @@ two distinct conclusions:
   drug-pair-reaction support datasets.
 
 MS4B is complete and production-validated end to end. MS6 is complete and
-production-validated for 2023-2025. MS7 was not started: this work creates no
+production-validated for 2023-2025. MS7A was not started: this work creates no
 lag features, temporal labels, models, or Spark implementation.
 
 ## Operational strategy
@@ -188,5 +188,5 @@ mode. No legacy full downstream artifacts exist for an effect-separated
 comparison. Peak memory is a process-level observation rather than a
 stage-isolated profiler measurement.
 
-MS7 remains pending. Temporal Gold construction, lag features, train/test
+MS7A remains pending. Temporal Gold construction, lag features, train/test
 splits, models, and Spark are outside this milestone.

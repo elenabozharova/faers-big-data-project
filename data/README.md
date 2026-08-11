@@ -32,7 +32,11 @@ Milestone 4A writes ignored Parquet indexes under
 `data/interim/case_resolution/`. Temporary SQLite work files are cleaned by
 default; `--keep-work-files` retains them for debugging.
 
-Milestone 7 publishes the canonical five-column analytical dataset under
+Milestone 7A publishes the canonical five-column analytical dataset under
 `data/gold/annual_pair_reactions/year=<year>/`. Gold partitions are generated
 artifacts and should be rebuilt from validated MS6 annual aggregates rather
 than edited directly.
+
+Milestone 7B publishes the Stage 3 temporal feature pilot under
+`data/gold/temporal_pair_reaction_features/target_year=<year>/`. These ignored
+Parquet partitions are rebuilt from the canonical MS7A Gold inputs.

@@ -1,4 +1,4 @@
-"""Publish the canonical MS7 annual pair-reaction Gold dataset.
+"""Publish the canonical MS7A annual pair-reaction Gold dataset.
 
 The builder consumes validated MS6 annual aggregates, validates their strict
 analytical contract in bounded batches, and atomically publishes Hive-style
@@ -150,7 +150,7 @@ def build_gold(
             )
             results.append(result)
         metadata = {
-            "milestone": "MS7",
+            "milestone": "MS7A",
             "created_at_utc": datetime.now(timezone.utc).isoformat(),
             "schema": GOLD_COLUMNS,
             "partitioning": "year",
@@ -174,7 +174,7 @@ def build_gold(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Build the validated MS7 partitioned annual pair-reaction Gold dataset.")
+    parser = argparse.ArgumentParser(description="Build the validated MS7A partitioned annual pair-reaction Gold dataset.")
     parser.add_argument("--years", nargs="+", required=True, help="Years or inclusive ranges, for example 2023-2025")
     parser.add_argument("--input-root", type=Path, default=DEFAULT_INPUT_ROOT)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
@@ -189,7 +189,7 @@ def main() -> int:
         parse_years(args.years), args.input_root, args.output_root,
         args.assignments, args.report, args.batch_size, args.overwrite,
     )
-    print(f"MS7 Gold dataset published: {metadata['total_rows']:,} rows across {len(metadata['years'])} year(s)")
+    print(f"MS7A Gold dataset published: {metadata['total_rows']:,} rows across {len(metadata['years'])} year(s)")
     return 0
 
 
