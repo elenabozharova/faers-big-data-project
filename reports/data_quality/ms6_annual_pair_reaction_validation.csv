@@ -1,0 +1,4 @@
+year,retained_cases,cases_with_at_least_two_mapped_drugs,case_drug_rows,unique_mapped_drugs,case_drug_pair_rows,case_drug_pair_selected_rows,case_pair_reaction_rows,unique_pair_reaction_patterns,min3_patterns,min5_patterns,min10_patterns,pair_order_violations,self_pair_violations,pair_reaction_duplicate_rows,support_count_violations,validation_status
+2023,1361395,449412,3176711,4647,11134568,11134568,133383154,23256862,6393185,4234914,2390729,0,0,0,0,passed
+2024,1308773,425838,3168844,4600,13313358,13313358,259927804,25346924,7067742,4789551,3012592,0,0,0,0,passed
+2025,1295857,427407,3235435,4651,14122469,14122469,209952427,28871255,8434213,5658578,3326862,0,0,0,0,passed
