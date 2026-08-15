@@ -1,9 +1,8 @@
-# MS7B/MS7C temporal modeling and MS8 PySpark requirements
+# MS7B/MS7C temporal modeling and MS8A/MS8B/MS8C PySpark requirements
 
 This document defines the required work after the canonical MS7A Gold
-dataset. MS7B is implemented and production-validated for the Stage 3 pilot.
-MS7C, Stage 4 historical expansion, and
-MS8 PySpark work remain pending.
+dataset. MS7B and MS7C are implemented and production-validated for the Stage
+3 pilot. Stage 4 historical expansion and MS8A, MS8B, and MS8C remain pending.
 
 ## Staged data rollout
 
@@ -126,7 +125,11 @@ Random row splitting is not acceptable for the primary temporal evaluation.
 Model comparisons must use the same eligible population and report metrics
 appropriate for a likely imbalanced recurrence target.
 
-## MS8 - PySpark implementation and benchmark
+## MS8A/MS8B/MS8C - PySpark implementation and benchmark
+
+The complete scope, parity contract, benchmark design, artifacts, and
+acceptance criteria are maintained in the
+[MS8A-MS8C Confluence-ready specification](ms8_pyspark_confluence.md).
 
 Spark work must port the expensive data-engineering stages, not merely train a
 model from an already-small feature table. The required Spark scope is:

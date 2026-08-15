@@ -1,0 +1,181 @@
+{
+  "milestone": "MS7C",
+  "status": "stage_3_pilot",
+  "created_at_utc": "2026-08-11T21:25:31.821557+00:00",
+  "train_year": 2024,
+  "test_year": 2025,
+  "candidate_population": "MS7B tuples observed before target_year",
+  "model_order": [
+    "always_negative",
+    "previous_year_persistence",
+    "support_threshold",
+    "logistic_regression"
+  ],
+  "selected_support_threshold": 2,
+  "training_rows": 23256862,
+  "training_positives": 9614927,
+  "input_files": {
+    "target_year=2024": {
+      "sha256": "70de5231e2162612b43f4b72d1c2dd2846c01d9933c05c97e112ef13334ec7b1",
+      "bytes": 61240947
+    },
+    "target_year=2025": {
+      "sha256": "9ef69ff792f3119ff85d73a199028af516b009c95d96698d7ef1cce62e2fd284",
+      "bytes": 142341635
+    }
+  },
+  "logistic_preprocessing": {
+    "features": [
+      "count_t1",
+      "count_t2",
+      "count_t3",
+      "present_t1",
+      "present_t2",
+      "present_t3",
+      "historical_total",
+      "years_observed",
+      "years_since_last_seen",
+      "count_t1_unavailable",
+      "count_t2_unavailable",
+      "count_t3_unavailable",
+      "present_t1_unavailable",
+      "present_t2_unavailable",
+      "present_t3_unavailable"
+    ],
+    "null_policy": "zero imputation plus explicit unavailable indicators for six lag features",
+    "scaler_mean": [
+      5.735217158703525,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      5.735217158703525,
+      1.0,
+      1.0,
+      0.0,
+      1.0,
+      1.0,
+      0.0,
+      1.0,
+      1.0
+    ],
+    "scaler_scale": [
+      20.379002634934192,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      20.379002634934192,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "logistic_model": {
+    "implementation": "sklearn.linear_model.SGDClassifier",
+    "loss": "log_loss",
+    "penalty": "l2",
+    "alpha": 0.0001,
+    "class_weight_policy": "balanced sample weights computed from training year",
+    "decision_threshold": 0.5,
+    "coefficients": [
+      4.224940603656899,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      4.224940603656899,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "intercept": [
+      1.2652739419780994
+    ]
+  },
+  "metrics": {
+    "always_negative": {
+      "rows": 38988859,
+      "positives": 13070201,
+      "prevalence": 0.33522912276042754,
+      "tp": 0,
+      "fp": 0,
+      "tn": 25918658,
+      "fn": 13070201,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "specificity": 1.0,
+      "balanced_accuracy": 0.5,
+      "predicted_positive_rate": 0.0,
+      "accuracy": 0.6647708772395725
+    },
+    "previous_year_persistence": {
+      "rows": 38988859,
+      "positives": 13070201,
+      "prevalence": 0.33522912276042754,
+      "tp": 10866750,
+      "fp": 14480174,
+      "tn": 11438484,
+      "fn": 2203451,
+      "precision": 0.4287206605424784,
+      "recall": 0.8314141458115296,
+      "f1": 0.565724270100899,
+      "specificity": 0.4413223863673806,
+      "balanced_accuracy": 0.6363682660894551,
+      "predicted_positive_rate": 0.6501068420596766,
+      "accuracy": 0.5720925046819144
+    },
+    "support_threshold": {
+      "rows": 38988859,
+      "positives": 13070201,
+      "prevalence": 0.33522912276042754,
+      "tp": 7337671,
+      "fp": 2894704,
+      "tn": 23023954,
+      "fn": 5732530,
+      "precision": 0.71710340952125,
+      "recall": 0.5614046027295219,
+      "f1": 0.6297733778445781,
+      "specificity": 0.8883158225244532,
+      "balanced_accuracy": 0.7248602126269875,
+      "predicted_positive_rate": 0.2624435611208833,
+      "accuracy": 0.7787256610920571
+    },
+    "logistic_regression": {
+      "rows": 38988859,
+      "positives": 13070201,
+      "prevalence": 0.33522912276042754,
+      "tp": 6696189,
+      "fp": 1917078,
+      "tn": 24001580,
+      "fn": 6374012,
+      "precision": 0.7774273106824623,
+      "recall": 0.5123248678425067,
+      "f1": 0.6176308144066254,
+      "specificity": 0.9260348278834498,
+      "balanced_accuracy": 0.7191798478629783,
+      "predicted_positive_rate": 0.22091610836829054,
+      "accuracy": 0.787347200901673,
+      "brier_score": 0.1682155158226395,
+      "roc_auc_approx": 0.7957227941349907,
+      "average_precision_approx": 0.7157521181018475
+    }
+  },
+  "probability_metric_method": "10,000-bin streaming approximation",
+  "gradient_boosted_trees": "optional_not_implemented",
+  "all_invariants_passed": true
+}
