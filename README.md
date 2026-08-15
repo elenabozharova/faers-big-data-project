@@ -19,8 +19,10 @@ such as `CHEMBL25`.
 | MS6 | Complete and production-validated for 2023-2025: final annual drug-pair-reaction support datasets |
 | MS7A | Complete and production-validated for 2023-2025: canonical partitioned annual pair-reaction Gold dataset |
 | MS7B | Complete and production-validated for the 2023-2025 pilot: temporal features and recurrence targets |
-| MS7C | Pending: ordered recurrence baselines and models |
-| MS8 | Pending: PySpark implementation and Pandas/Spark benchmark |
+| MS7C | Complete and production-validated for the Stage 3 pilot: ordered recurrence baselines and logistic regression |
+| MS8A | Pending: PySpark pipeline implementation |
+| MS8B | Pending: Spark/local correctness and output parity |
+| MS8C | Pending: scaling benchmark and engine recommendation |
 
 ## Pipeline overview
 
@@ -38,7 +40,9 @@ FAERS quarterly archives
 -> final globally corrected annual pair-reaction support datasets
 -> canonical partitioned MS7A Gold dataset
 -> temporal feature engineering and modeling (pending)
--> MS8 PySpark implementation and benchmark (pending)
+-> MS8A PySpark pipeline implementation (pending)
+-> MS8B correctness and parity validation (pending)
+-> MS8C performance benchmark and recommendation (pending)
 ```
 
 MS4A assigns each CASEID once and selects one eligible version globally.
@@ -417,20 +421,31 @@ All features use history strictly before the target year, and unavailable pilot
 lags are null rather than false zero observations. See
 `reports/data_quality/ms7b_temporal_features_validation.json`.
 
+## MS7C - Temporal recurrence baselines and models
+
+MS7C is complete and production-validated for the Stage 3 pilot. The required
+approaches were implemented in order using 2024 for development and 2025 as
+the held-out forward test year. The selected support rule was `count_t1 >= 2`.
+On 2025, it achieved F1 0.6298 and balanced accuracy 0.7249. Streaming logistic
+regression achieved F1 0.6176, balanced accuracy 0.7192, and approximate ROC
+AUC 0.7957. Gradient-boosted trees remain optional and were not implemented.
+See the [MS7C specification](docs/ms7c_modeling_confluence.md) and
+`reports/modeling/ms7c/ms7c_summary.json`.
+
 ## Next milestone
 
-MS7C model work is defined in the
-[MS7C Confluence-ready specification](docs/ms7c_modeling_confluence.md), and the
-overall sequence is documented in
-[MS7B/MS7C modeling and MS8 PySpark requirements](docs/post_ms7_temporal_modeling_requirements.md):
+The remaining sequence is documented in
+[MS7B/MS7C modeling and MS8A-MS8C PySpark requirements](docs/post_ms7_temporal_modeling_requirements.md):
 
-1. Implement an always-negative baseline, previous-year persistence rule,
-   support-threshold rule, logistic regression, and optionally
-   gradient-boosted trees, in that order.
-2. Complete the Stage 4 historical expansion for 2013-2022 after the pilot
+1. Complete the Stage 4 historical expansion for 2013-2022 after the pilot
    pipeline works end to end.
-3. Implement MS8 by porting the expensive data-engineering stages to PySpark
-   and benchmark the local pipeline against Spark over increasing year ranges.
+2. Implement MS8A by porting the expensive data-engineering stages to PySpark.
+3. Complete MS8B correctness and output-parity validation.
+4. Complete MS8C by benchmarking the local pipeline against Spark over
+   increasing year ranges and documenting the engine recommendation.
+
+The complete milestone definition is maintained in the
+[MS8A-MS8C Confluence-ready specification](docs/ms8_pyspark_confluence.md).
 
 The expanded 2013-2022 history remains required before declaring the full
 three-lag modeling dataset production-complete for the intended historical

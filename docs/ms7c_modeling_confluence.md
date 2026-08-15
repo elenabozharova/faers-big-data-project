@@ -2,12 +2,12 @@
 
 | Field | Value |
 |---|---|
-| Status | Planned |
+| Status | Complete for Stage 3 pilot |
 | Owner | Data Science / Data Engineering |
 | Input | MS7B temporal recurrence feature dataset |
 | Pilot years | Features from 2023-2024; targets for 2024-2025 |
 | Output | Reproducible model evaluations, predictions, and selected thresholds |
-| Out of scope | Historical 2013-2022 expansion and MS8 PySpark implementation |
+| Out of scope | Historical 2013-2022 expansion and MS8A-MS8C PySpark work |
 
 ## Objective
 
@@ -192,5 +192,27 @@ Gradient-boosted trees are optional and do not block MS7C completion.
 
 MS7C covers local baseline and model evaluation only. After the pilot pipeline
 works end to end, Stage 4 expands the data through 2013-2022 and enables a
-stronger multi-year temporal evaluation. MS8 then ports expensive data
-engineering stages to PySpark and benchmarks the local pipeline against Spark.
+stronger multi-year temporal evaluation. MS8A then ports expensive stages to
+PySpark, MS8B validates parity, and MS8C benchmarks local execution and Spark.
+
+## Stage 3 production result
+
+The four required approaches were implemented in order. The support threshold
+was selected using 2024, and the final metrics use the held-out 2025 target
+year with 38,988,859 candidates and 13,070,201 positive targets.
+
+| Model | Precision | Recall | F1 | Balanced accuracy | Accuracy |
+|---|---:|---:|---:|---:|---:|
+| Always negative | 0.0000 | 0.0000 | 0.0000 | 0.5000 | 0.6648 |
+| Previous-year persistence | 0.4287 | 0.8314 | 0.5657 | 0.6364 | 0.5721 |
+| Support threshold (`count_t1 >= 2`) | 0.7171 | 0.5614 | 0.6298 | 0.7249 | 0.7787 |
+| Logistic regression | 0.7774 | 0.5123 | 0.6176 | 0.7192 | 0.7873 |
+
+The logistic model achieved Brier score 0.1682, approximate ROC AUC 0.7957,
+and approximate average precision 0.7158. Probability metrics use a documented
+10,000-bin streaming approximation so evaluation remains bounded-memory.
+
+The support rule had the strongest pilot F1 and balanced accuracy, while
+logistic regression had higher precision and overall accuracy. This is a
+preliminary two-target-year evaluation. Gradient-boosted trees remain optional
+and were not implemented.
