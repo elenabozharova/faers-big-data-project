@@ -438,7 +438,16 @@ The remaining sequence is documented in
 [MS7B/MS7C modeling and MS8A-MS8C PySpark requirements](docs/post_ms7_temporal_modeling_requirements.md):
 
 1. Complete the Stage 4 historical expansion for 2013-2022 after the pilot
-   pipeline works end to end.
+   pipeline works end to end. In progress: the pipeline is confirmed
+   range-configurable end to end, and all of 2013-2025 (52 quarters) is now
+   downloaded and verified via real download attempts against
+   `config/faers_sources.csv` -- including one genuine historical naming
+   exception (2018 Q1's `DEMO18Q1_new.txt`) caught by a failed download, not
+   assumed. A real cross-year MS4A resolution run has been validated against
+   an isolated output directory. MS4B, MS5, MS6, MS7A, and MS7B have not yet
+   been rerun for the historical years, and nothing has been promoted to the
+   production output paths. See
+   [Stage 4 historical expansion](docs/stage4_historical_expansion.md).
 2. Implement MS8A by porting the expensive data-engineering stages to PySpark.
 3. Complete MS8B correctness and output-parity validation.
 4. Complete MS8C by benchmarking the local pipeline against Spark over

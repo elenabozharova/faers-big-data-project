@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 import pandas as pd
 from download_faers import ManifestError, Source, load_manifest, select_sources
+from faers_utils import resolve_member  # noqa: F401 (re-exported for existing importers)
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = ROOT / "config/faers_sources.csv"
@@ -59,13 +60,6 @@ def locate_archive(raw_dir: Path, filename: str) -> Path:
     if not raw_dir.exists(): raise FileNotFoundError(f"raw directory does not exist: {raw_dir}")
     found = [p for p in raw_dir.iterdir() if p.is_file() and p.name.casefold() == filename.casefold()]
     if len(found) != 1: raise FileNotFoundError(f"{'missing' if not found else 'ambiguous'} archive {filename!r}")
-    return found[0]
-
-def resolve_member(zf: zipfile.ZipFile, wanted: str) -> str:
-    wanted = wanted.replace("\\", "/")
-    exact = [n for n in zf.namelist() if n.replace("\\", "/") == wanted]
-    found = exact or [n for n in zf.namelist() if n.replace("\\", "/").casefold() == wanted.casefold()]
-    if len(found) != 1: raise KeyError(f"{'missing' if not found else 'ambiguous'} ZIP member {wanted!r}")
     return found[0]
 
 def blank(source: Source, table: str, path: Path, limit: int | None) -> dict[str, Any]:

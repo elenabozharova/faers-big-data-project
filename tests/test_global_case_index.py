@@ -101,6 +101,44 @@ class GlobalCaseIndexTests(unittest.TestCase):
         self.assertTrue(assignment["has_later_year_followup_in_loaded_data"])
         self.assertTrue(assignment["has_later_followup_in_loaded_data"])
 
+    def test_stage4_multi_year_gap_caseversion_resolves_to_single_case(self):
+        """Historical expansion (Stage 4): a CASEID first reported in 2018 and
+        amended in 2021 (a 3-year gap spanning the pilot/historical boundary)
+        must still resolve to exactly one winner, not one case per year.
+
+        This also pins down a non-obvious, deliberate policy consequence
+        (docs/cross_year_case_resolution.md): assignment freezes to the
+        original INIT_FDA_DT year, and eligibility requires
+        source_year <= assigned_year. Because INIT_FDA_DT is invariant across
+        a real case's versions, a later-year amendment (here, 2021) is never
+        eligible to win -- it is recorded as a followup only. Winning stays
+        with the highest-version row from *within* the assigned year, even
+        though a higher CASEVERSION exists in a later loaded year.
+        """
+        rows = [
+            self.observation(
+                primaryid="20", version="1", source_year=2018, source_quarter=2,
+                fda_date="2018-04-01", initial_date="2018-04-01", row_id=1,
+            ),
+            self.observation(
+                primaryid="21", version="2", source_year=2021, source_quarter=1,
+                fda_date="2021-01-15", initial_date="2018-04-01", row_id=2,
+            ),
+        ]
+        assignment, winner, eligible, later = global_index.resolve_case(
+            rows, set(), [2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]
+        )
+        self.assertEqual(assignment["assignment_status"], "included")
+        self.assertEqual(assignment["assigned_report_year"], 2018)
+        self.assertEqual(winner.primaryid, "20")
+        self.assertEqual(winner.caseversion_numeric, 1)
+        self.assertEqual(eligible, {1})
+        self.assertEqual(later, {2})
+        self.assertTrue(assignment["has_later_year_followup_in_loaded_data"])
+        # Exactly one assignment row is produced for this caseid regardless of
+        # how many years of history are loaded -- never one per observed year.
+        self.assertEqual(assignment["observed_row_count"], 2)
+
     def test_conflicts_gaps_chronology_and_outside_window(self):
         rows = [
             self.observation(version="3", initial_date="2024-03-01", row_id=1),
