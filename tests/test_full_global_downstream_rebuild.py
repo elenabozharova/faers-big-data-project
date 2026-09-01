@@ -89,6 +89,18 @@ def fixture(root: Path, year: int = 2099):
 
 
 class FullGlobalDownstreamTests(unittest.TestCase):
+    def test_merge_annual_summaries_preserves_untouched_years(self):
+        """Stage 4 (2013-2022): rerunning MS6 to additively add historical
+        years must not erase the 2023-2025 entries already recorded in the
+        shared annual_summary_all_years.json rollup."""
+        existing = [{"year": 2023, "retained_cases": 100}, {"year": 2024, "retained_cases": 200}]
+        new = [{"year": 2013, "retained_cases": 50}, {"year": 2024, "retained_cases": 201}]
+        merged = rebuild.merge_annual_summaries(existing, new)
+        self.assertEqual([item["year"] for item in merged], [2013, 2023, 2024])
+        self.assertEqual(next(item for item in merged if item["year"] == 2023)["retained_cases"], 100)
+        self.assertEqual(next(item for item in merged if item["year"] == 2024)["retained_cases"], 201)
+
+
     def test_complete_boundary_to_threshold_outputs_and_safe_publish(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

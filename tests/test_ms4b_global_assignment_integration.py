@@ -98,6 +98,29 @@ class Ms4bTests(unittest.TestCase):
         self.assertEqual(report24["selected_cases_missing_both"], 0)
         self.assertEqual(report23["later_followup_primaryids_excluded"], 1)
 
+    def test_self_referential_later_followup_primaryid_is_not_a_leak(self):
+        """Stage 4 (2013-2022): a rare, real FAERS anomaly (~340/16.4M included
+        cases) republishes the identical (CASEID, CASEVERSION) row -- hence the
+        identical PRIMARYID -- in a later year's export with no version
+        chronology conflict. The winner's own PRIMARYID then legitimately
+        appears in its own later_followup_primaryids list; that must not be
+        treated as a leaked followup reaching downstream."""
+        rows = assignments()
+        rows.loc[rows["caseid"] == "A", "later_followup_primaryids"] = pd.Series(
+            [["1001"]], index=rows.index[rows["caseid"] == "A"]
+        )
+        tables = {
+            (2023, 1, "drug"): pd.DataFrame([{"primaryid": "1001", "caseid": "A", "drugname": "d"}]),
+            (2023, 1, "reac"): pd.DataFrame([{"primaryid": "1001", "caseid": "A", "pt": "p"}]),
+            (2023, 2, "drug"): pd.DataFrame([{"primaryid": "0010", "caseid": "B", "drugname": "d"}]),
+            (2023, 2, "reac"): pd.DataFrame(columns=["primaryid", "caseid", "pt"]),
+        }
+        loader = lambda sy, sq, name: tables[(sy, sq, name)].copy()
+        retained, drug, reac, report = ms4b.integrate_year(rows, 2023, loader)
+        self.assertEqual(retained["caseid"].tolist(), ["A"])
+        self.assertEqual(set(drug["primaryid"]), {"1001"})
+        self.assertEqual(report["later_followup_primaryids_excluded"], 0)
+
     def test_selected_case_missing_both_is_retained(self):
         empty = lambda *_: pd.DataFrame(columns=["primaryid", "caseid"])
         retained, drug, reac, report = ms4b.integrate_year(assignments(), 2023, empty)

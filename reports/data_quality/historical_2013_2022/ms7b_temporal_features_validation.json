@@ -1,0 +1,264 @@
+{
+  "milestone": "MS7B",
+  "status": "stage_3_pilot",
+  "created_at_utc": "2026-08-20T20:24:34.621094+00:00",
+  "candidate_population": "tuples observed at least once before target_year",
+  "unavailable_lag_policy": "null; distinct from observed zero support",
+  "available_years": [
+    2013,
+    2014,
+    2015,
+    2016,
+    2017,
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025
+  ],
+  "target_years": [
+    2015,
+    2016,
+    2017,
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025
+  ],
+  "schema": [
+    "target_year",
+    "drug_a",
+    "drug_b",
+    "reaction_pt",
+    "count_t1",
+    "count_t2",
+    "count_t3",
+    "present_t1",
+    "present_t2",
+    "present_t3",
+    "historical_total",
+    "years_observed",
+    "years_since_last_seen",
+    "target"
+  ],
+  "partitions": [
+    {
+      "rows": 19175833,
+      "duplicate_keys": 0,
+      "wrong_year": 0,
+      "invalid_pairs": 0,
+      "invalid_history": 0,
+      "invalid_targets": 0,
+      "positive_targets": 3984951,
+      "target_year": 2015,
+      "history_years": [
+        2013,
+        2014
+      ]
+    },
+    {
+      "rows": 30420807,
+      "duplicate_keys": 0,
+      "wrong_year": 0,
+      "invalid_pairs": 0,
+      "invalid_history": 0,
+      "invalid_targets": 0,
+      "positive_targets": 6184286,
+      "target_year": 2016,
+      "history_years": [
+        2013,
+        2014,
+        2015
+      ]
+    },
+    {
+      "rows": 42368465,
+      "duplicate_keys": 0,
+      "wrong_year": 0,
+      "invalid_pairs": 0,
+      "invalid_history": 0,
+      "invalid_targets": 0,
+      "positive_targets": 7400019,
+      "target_year": 2017,
+      "history_years": [
+        2013,
+        2014,
+        2015,
+        2016
+      ]
+    },
+    {
+      "rows": 52716536,
+      "duplicate_keys": 0,
+      "wrong_year": 0,
+      "invalid_pairs": 0,
+      "invalid_history": 0,
+      "invalid_targets": 0,
+      "positive_targets": 8959302,
+      "target_year": 2018,
+      "history_years": [
+        2013,
+        2014,
+        2015,
+        2016,
+        2017
+      ]
+    },
+    {
+      "rows": 63679998,
+      "duplicate_keys": 0,
+      "wrong_year": 0,
+      "invalid_pairs": 0,
+      "invalid_history": 0,
+      "invalid_targets": 0,
+      "positive_targets": 10509918,
+      "target_year": 2019,
+      "history_years": [
+        2013,
+        2014,
+        2015,
+        2016,
+        2017,
+        2018
+      ]
+    },
+    {
+      "rows": 74305569,
+      "duplicate_keys": 0,
+      "wrong_year": 0,
+      "invalid_pairs": 0,
+      "invalid_history": 0,
+      "invalid_targets": 0,
+      "positive_targets": 12507538,
+      "target_year": 2020,
+      "history_years": [
+        2013,
+        2014,
+        2015,
+        2016,
+        2017,
+        2018,
+        2019
+      ]
+    },
+    {
+      "rows": 86277409,
+      "duplicate_keys": 0,
+      "wrong_year": 0,
+      "invalid_pairs": 0,
+      "invalid_history": 0,
+      "invalid_targets": 0,
+      "positive_targets": 11057451,
+      "target_year": 2021,
+      "history_years": [
+        2013,
+        2014,
+        2015,
+        2016,
+        2017,
+        2018,
+        2019,
+        2020
+      ]
+    },
+    {
+      "rows": 95221750,
+      "duplicate_keys": 0,
+      "wrong_year": 0,
+      "invalid_pairs": 0,
+      "invalid_history": 0,
+      "invalid_targets": 0,
+      "positive_targets": 11919437,
+      "target_year": 2022,
+      "history_years": [
+        2013,
+        2014,
+        2015,
+        2016,
+        2017,
+        2018,
+        2019,
+        2020,
+        2021
+      ]
+    },
+    {
+      "rows": 104532085,
+      "duplicate_keys": 0,
+      "wrong_year": 0,
+      "invalid_pairs": 0,
+      "invalid_history": 0,
+      "invalid_targets": 0,
+      "positive_targets": 13419179,
+      "target_year": 2023,
+      "history_years": [
+        2013,
+        2014,
+        2015,
+        2016,
+        2017,
+        2018,
+        2019,
+        2020,
+        2021,
+        2022
+      ]
+    },
+    {
+      "rows": 114369768,
+      "duplicate_keys": 0,
+      "wrong_year": 0,
+      "invalid_pairs": 0,
+      "invalid_history": 0,
+      "invalid_targets": 0,
+      "positive_targets": 15450976,
+      "target_year": 2024,
+      "history_years": [
+        2013,
+        2014,
+        2015,
+        2016,
+        2017,
+        2018,
+        2019,
+        2020,
+        2021,
+        2022,
+        2023
+      ]
+    },
+    {
+      "rows": 124265716,
+      "duplicate_keys": 0,
+      "wrong_year": 0,
+      "invalid_pairs": 0,
+      "invalid_history": 0,
+      "invalid_targets": 0,
+      "positive_targets": 17537541,
+      "target_year": 2025,
+      "history_years": [
+        2013,
+        2014,
+        2015,
+        2016,
+        2017,
+        2018,
+        2019,
+        2020,
+        2021,
+        2022,
+        2023,
+        2024
+      ]
+    }
+  ],
+  "total_rows": 807333936,
+  "all_invariants_passed": true
+}

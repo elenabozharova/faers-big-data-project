@@ -52,14 +52,21 @@ def load_faers_table(zip_path: str, inner_path: str, max_rows: int | None = None
     """Load a dollar-delimited FAERS ASCII table from a quarterly ZIP."""
     with zipfile.ZipFile(zip_path) as archive:
         resolved_path = resolve_member(archive, inner_path)
-        with archive.open(resolved_path) as source:
-            df = pd.read_csv(
-                source,
-                sep="$",
-                dtype=str,
-                low_memory=False,
-                nrows=max_rows,
-            )
+        try:
+            with archive.open(resolved_path) as source:
+                df = pd.read_csv(
+                    source, sep="$", dtype=str, low_memory=False, nrows=max_rows, encoding="utf-8",
+                )
+        except UnicodeDecodeError:
+            # A handful of pre-2020 FAERS quarters carry Windows-1252 bytes (e.g. a
+            # soft hyphen, 0xAD) in free-text fields instead of valid UTF-8. Only
+            # retry on a confirmed UTF-8 failure -- never silently reinterpret bytes
+            # that already decoded correctly as UTF-8.
+            print(f"  [WARN] {inner_path}: not valid UTF-8, retrying as cp1252")
+            with archive.open(resolved_path) as source:
+                df = pd.read_csv(
+                    source, sep="$", dtype=str, low_memory=False, nrows=max_rows, encoding="cp1252",
+                )
     df.columns = df.columns.str.lower().str.strip()
     print(f"  {inner_path}: {len(df):,} rows, columns={list(df.columns)}")
     return df

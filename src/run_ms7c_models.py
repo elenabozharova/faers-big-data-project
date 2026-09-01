@@ -28,9 +28,22 @@ FEATURES = [
     "count_t1", "count_t2", "count_t3", "present_t1", "present_t2",
     "present_t3", "historical_total", "years_observed", "years_since_last_seen",
 ]
+LAG_PRESENT_FEATURES = set(FEATURES[:6])
 MISSING_FEATURES = [f"{name}_unavailable" for name in FEATURES[:6]]
 MODEL_FEATURES = FEATURES + MISSING_FEATURES
+FEATURE_SETS = {
+    "m1": ["count_t1"],
+    "m2": ["count_t1", "count_t2", "count_t3"],
+    "m3": FEATURES,
+}
 THRESHOLDS = [1, 2, 3, 5, 10, 20, 50, 100]
+
+
+def model_features_for(feature_set: str) -> tuple[list[str], list[str]]:
+    """Return (features, model_features) for a named ablation feature set."""
+    features = FEATURE_SETS[feature_set]
+    missing = [f"{name}_unavailable" for name in features if name in LAG_PRESENT_FEATURES]
+    return features, features + missing
 
 
 def feature_path(root: Path, year: int) -> Path:
@@ -48,15 +61,19 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def iter_batches(path: Path, batch_size: int, include_keys: bool = False):
-    columns = (["drug_a", "drug_b", "reaction_pt"] if include_keys else []) + FEATURES + ["target"]
+def iter_batches(path: Path, batch_size: int, features: list[str] = FEATURES, include_keys: bool = False):
+    # count_t1 is always loaded so the feature-set-invariant rule baselines can be computed
+    # regardless of which ablation feature set the logistic model is using.
+    columns = (["drug_a", "drug_b", "reaction_pt"] if include_keys else [])
+    columns += list(dict.fromkeys(features + ["count_t1"])) + ["target"]
     yield from pq.ParquetFile(path).iter_batches(batch_size=batch_size, columns=columns)
 
 
-def matrix_from_batch(batch: pa.RecordBatch) -> tuple[np.ndarray, np.ndarray]:
+def matrix_from_batch(batch: pa.RecordBatch, features: list[str] = FEATURES) -> tuple[np.ndarray, np.ndarray]:
     frame = batch.to_pandas()
-    raw = frame[FEATURES].to_numpy(dtype=np.float64, na_value=np.nan)
-    unavailable = np.isnan(raw[:, :6]).astype(np.float64)
+    raw = frame[features].to_numpy(dtype=np.float64, na_value=np.nan)
+    missing_idx = [i for i, name in enumerate(features) if name in LAG_PRESENT_FEATURES]
+    unavailable = np.isnan(raw[:, missing_idx]).astype(np.float64)
     np.nan_to_num(raw, copy=False, nan=0.0)
     return np.column_stack((raw, unavailable)), frame["target"].to_numpy(dtype=np.int8)
 
@@ -131,7 +148,7 @@ class BinaryMetrics:
 
 def select_support_threshold(path: Path, batch_size: int, thresholds=THRESHOLDS):
     metrics = {threshold: BinaryMetrics() for threshold in thresholds}
-    for batch in iter_batches(path, batch_size):
+    for batch in iter_batches(path, batch_size, features=[]):
         frame = batch.to_pandas()
         counts = frame["count_t1"].fillna(0).to_numpy(dtype=np.int64)
         target = frame["target"].to_numpy(dtype=np.int8)
@@ -142,11 +159,11 @@ def select_support_threshold(path: Path, batch_size: int, thresholds=THRESHOLDS)
     return int(selected["threshold"]), rows
 
 
-def train_logistic(path: Path, batch_size: int, random_state: int = 42):
+def train_logistic(path: Path, batch_size: int, features: list[str] = FEATURES, random_state: int = 42):
     scaler = StandardScaler()
     positives = rows = 0
-    for batch in iter_batches(path, batch_size):
-        matrix, target = matrix_from_batch(batch)
+    for batch in iter_batches(path, batch_size, features=features):
+        matrix, target = matrix_from_batch(batch, features)
         scaler.partial_fit(matrix)
         positives += int(target.sum())
         rows += len(target)
@@ -159,8 +176,8 @@ def train_logistic(path: Path, batch_size: int, random_state: int = 42):
         learning_rate="optimal", random_state=random_state, average=True,
     )
     first = True
-    for batch in iter_batches(path, batch_size):
-        matrix, target = matrix_from_batch(batch)
+    for batch in iter_batches(path, batch_size, features=features):
+        matrix, target = matrix_from_batch(batch, features)
         weights = np.where(target == 1, positive_weight, negative_weight)
         model.partial_fit(
             scaler.transform(matrix), target, classes=np.array([0, 1], dtype=np.int8) if first else None,
@@ -172,7 +189,7 @@ def train_logistic(path: Path, batch_size: int, random_state: int = 42):
 
 def evaluate_and_write(
     path: Path, destination: Path, scaler: StandardScaler, model: SGDClassifier,
-    support_threshold: int, batch_size: int,
+    support_threshold: int, batch_size: int, features: list[str] = FEATURES,
 ):
     trackers = {name: BinaryMetrics() for name in (
         "always_negative", "previous_year_persistence", "support_threshold", "logistic_regression",
@@ -190,9 +207,9 @@ def evaluate_and_write(
     writer = pq.ParquetWriter(destination, schema, compression="zstd")
     target_year = int(path.parent.name.split("=", 1)[1])
     try:
-        for batch in iter_batches(path, batch_size, include_keys=True):
+        for batch in iter_batches(path, batch_size, features=features, include_keys=True):
             frame = batch.to_pandas()
-            matrix, target = matrix_from_batch(batch)
+            matrix, target = matrix_from_batch(batch, features)
             counts = frame["count_t1"].fillna(0).to_numpy(dtype=np.int64)
             always = np.zeros(len(target), dtype=np.int8)
             persistence = (counts > 0).astype(np.int8)
@@ -228,9 +245,11 @@ def write_csv(path: Path, rows: list[dict]):
 def run_ms7c(
     feature_root: Path, output_root: Path, report_root: Path,
     train_year: int, test_year: int, batch_size: int, overwrite: bool,
+    feature_set: str = "m3",
 ):
     if train_year >= test_year:
         raise ValueError("train year must precede test year")
+    features, model_features = model_features_for(feature_set)
     train_path = feature_path(feature_root, train_year)
     test_path = feature_path(feature_root, test_year)
     if output_root.exists() and not overwrite:
@@ -239,15 +258,15 @@ def run_ms7c(
     staging = Path(tempfile.mkdtemp(prefix=f".{output_root.name}-", dir=output_root.parent))
     try:
         threshold, threshold_rows = select_support_threshold(train_path, batch_size)
-        scaler, model, training = train_logistic(train_path, batch_size)
+        scaler, model, training = train_logistic(train_path, batch_size, features)
         prediction_dir = staging / "predictions" / f"target_year={test_year}"
         prediction_dir.mkdir(parents=True)
         metrics = evaluate_and_write(
-            test_path, prediction_dir / "part-00000.parquet", scaler, model, threshold, batch_size,
+            test_path, prediction_dir / "part-00000.parquet", scaler, model, threshold, batch_size, features,
         )
         model_dir = staging / "models"
         model_dir.mkdir()
-        joblib.dump({"scaler": scaler, "model": model, "features": MODEL_FEATURES}, model_dir / "logistic_regression.joblib")
+        joblib.dump({"scaler": scaler, "model": model, "features": model_features}, model_dir / "logistic_regression.joblib")
         summary = {
             "milestone": "MS7C", "status": "stage_3_pilot",
             "created_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -259,9 +278,10 @@ def run_ms7c(
                 f"target_year={train_year}": {"sha256": sha256_file(train_path), "bytes": train_path.stat().st_size},
                 f"target_year={test_year}": {"sha256": sha256_file(test_path), "bytes": test_path.stat().st_size},
             },
+            "feature_set": feature_set,
             "logistic_preprocessing": {
-                "features": MODEL_FEATURES,
-                "null_policy": "zero imputation plus explicit unavailable indicators for six lag features",
+                "features": model_features,
+                "null_policy": "zero imputation plus explicit unavailable indicators for lag/present features in the active feature set",
                 "scaler_mean": scaler.mean_.tolist(), "scaler_scale": scaler.scale_.tolist(),
             },
             "logistic_model": {
@@ -306,12 +326,17 @@ def main():
     parser.add_argument("--test-year", type=int, default=2025)
     parser.add_argument("--batch-size", type=int, default=250_000)
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument(
+        "--feature-set", choices=sorted(FEATURE_SETS), default="m3",
+        help="m1=count_t1 only, m2=three annual lags, m3=full existing support feature set (default).",
+    )
     args = parser.parse_args()
     if args.batch_size < 1:
         parser.error("--batch-size must be positive")
     result = run_ms7c(
         args.feature_root, args.output_root, args.report_root,
         args.train_year, args.test_year, args.batch_size, args.overwrite,
+        args.feature_set,
     )
     print(f"MS7C pilot complete; logistic F1={result['metrics']['logistic_regression']['f1']:.4f}")
 

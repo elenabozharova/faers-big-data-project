@@ -143,13 +143,23 @@ def integrate_year(
     drug_cases, reac_cases = set(drug["caseid"]), set(reac["caseid"])
     later = set()
     if "later_followup_primaryids" in selected:
-        for values in selected["later_followup_primaryids"].dropna():
+        for own_pid, values in zip(selected["selected_primaryid"], selected["later_followup_primaryids"]):
+            if values is None:
+                continue
             # PyArrow list columns are commonly materialized as numpy arrays,
             # while synthetic/unit data often uses Python lists.
             if not isinstance(values, (str, bytes)):
+                # A case's own winning PRIMARYID can reappear in its own
+                # later_followup_primaryids when FAERS redundantly republishes
+                # the identical (CASEID, CASEVERSION) row in a later year's
+                # export (confirmed real, rare: ~340/16.4M included cases,
+                # all with version_chronology_conflict=False and
+                # selected_caseversion == latest_caseversion_observed). That
+                # is not a leaked followup -- it is the same winning row
+                # re-observed -- so it must not be excluded from itself.
                 later.update(
                     normalized for value in values
-                    if (normalized := str(value).strip())
+                    if (normalized := str(value).strip()) and normalized != own_pid
                 )
     leaked_later = later & (set(drug["primaryid"]) | set(reac["primaryid"]))
     if leaked_later:

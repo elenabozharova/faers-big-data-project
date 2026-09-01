@@ -30,6 +30,10 @@ DEFAULT_ASSIGNMENTS = ROOT / "data/interim/case_resolution/global_case_assignmen
 DEFAULT_OUTPUT_DIR = ROOT / "data/interim/drug_mapping"
 DEFAULT_REPORT_DIR = ROOT / "reports/data_quality"
 REQUIRED_COLUMNS = ("caseid", "primaryid", "prod_ai", "drugname")
+# prod_ai was added to the FAERS DRUG table after 2013; process_faers_case_level.py's
+# _choose_raw_drug_name() already falls back to an all-blank prod_ai when the column
+# is absent, so it is required-if-present here too, not unconditionally required.
+STRICTLY_REQUIRED_COLUMNS = ("caseid", "primaryid", "drugname")
 INVALID_NORMALIZED_SENTINELS = frozenset({"nan", "none", "null"})
 
 
@@ -88,7 +92,7 @@ def resolve_annual_drug_inputs(input_root: Path, years: list[int], filename: str
             schema = pq.ParquetFile(path).schema_arrow.names
         except Exception as exc:
             raise ValueError(f"cannot read annual input parquet {path}: {exc}") from exc
-        missing = sorted(set(REQUIRED_COLUMNS) - set(schema))
+        missing = sorted(set(STRICTLY_REQUIRED_COLUMNS) - set(schema))
         if missing:
             raise ValueError(f"annual input {path} missing required columns: {missing}")
         resolved.append(AnnualDrugInput(year, path))
@@ -214,8 +218,14 @@ def build_multi_year_vocabulary(
                 metrics = Counter()
                 annual_raw_names, annual_norms, annual_combos = set(), set(), set()
                 parquet = pq.ParquetFile(item.path)
-                for record_batch in parquet.iter_batches(batch_size=batch_size, columns=list(REQUIRED_COLUMNS)):
+                has_prod_ai = "prod_ai" in parquet.schema_arrow.names
+                read_columns = [c for c in REQUIRED_COLUMNS if c != "prod_ai" or has_prod_ai]
+                if not has_prod_ai:
+                    print(f"  [WARN] {item.path}: no prod_ai column (pre-2014 FAERS DRUG table); treating as blank")
+                for record_batch in parquet.iter_batches(batch_size=batch_size, columns=read_columns):
                     frame = record_batch.to_pandas()
+                    if not has_prod_ai:
+                        frame["prod_ai"] = ""
                     frame["caseid"] = normalize_identifier(frame["caseid"])
                     frame["primaryid"] = normalize_identifier(frame["primaryid"])
                     if frame[["caseid", "primaryid"]].isna().any().any():

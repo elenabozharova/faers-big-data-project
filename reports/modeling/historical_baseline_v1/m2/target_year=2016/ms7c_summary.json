@@ -1,0 +1,146 @@
+{
+  "milestone": "MS7C",
+  "status": "stage_3_pilot",
+  "created_at_utc": "2026-08-20T20:32:59.740988+00:00",
+  "train_year": 2015,
+  "test_year": 2016,
+  "candidate_population": "MS7B tuples observed before target_year",
+  "model_order": [
+    "always_negative",
+    "previous_year_persistence",
+    "support_threshold",
+    "logistic_regression"
+  ],
+  "selected_support_threshold": 2,
+  "training_rows": 19175833,
+  "training_positives": 3984951,
+  "input_files": {
+    "target_year=2015": {
+      "sha256": "586e55ecaaf3a8b7081786661384adbd10097ca2e38521815e64a9f037549f9c",
+      "bytes": 60740699
+    },
+    "target_year=2016": {
+      "sha256": "7f5ef81166aaae77878d10c7f796e8bdc34a7a4dd75811b122676b264c34da29",
+      "bytes": 112290407
+    }
+  },
+  "feature_set": "m2",
+  "logistic_preprocessing": {
+    "features": [
+      "count_t1",
+      "count_t2",
+      "count_t3",
+      "count_t1_unavailable",
+      "count_t2_unavailable",
+      "count_t3_unavailable"
+    ],
+    "null_policy": "zero imputation plus explicit unavailable indicators for lag/present features in the active feature set",
+    "scaler_mean": [
+      0.9631667630814265,
+      0.7171506447725113,
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ],
+    "scaler_scale": [
+      2.1734478452326966,
+      2.022716636330302,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "logistic_model": {
+    "implementation": "sklearn.linear_model.SGDClassifier",
+    "loss": "log_loss",
+    "penalty": "l2",
+    "alpha": 0.0001,
+    "class_weight_policy": "balanced sample weights computed from training year",
+    "decision_threshold": 0.5,
+    "coefficients": [
+      1.66857913197586,
+      0.869143894619896,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "intercept": [
+      -0.015258586726506174
+    ]
+  },
+  "metrics": {
+    "always_negative": {
+      "rows": 30420807,
+      "positives": 6184286,
+      "prevalence": 0.20329131965499797,
+      "tp": 0,
+      "fp": 0,
+      "tn": 24236521,
+      "fn": 6184286,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "specificity": 1.0,
+      "balanced_accuracy": 0.5,
+      "predicted_positive_rate": 0.0,
+      "accuracy": 0.796708680345002
+    },
+    "previous_year_persistence": {
+      "rows": 30420807,
+      "positives": 6184286,
+      "prevalence": 0.20329131965499797,
+      "tp": 4509302,
+      "fp": 10720623,
+      "tn": 13515898,
+      "fn": 1674984,
+      "precision": 0.29608169442725424,
+      "recall": 0.7291548288678757,
+      "f1": 0.42115042202582204,
+      "specificity": 0.5576665891940514,
+      "balanced_accuracy": 0.6434107090309635,
+      "predicted_positive_rate": 0.5006417153890756,
+      "accuracy": 0.5925286597426558
+    },
+    "support_threshold": {
+      "rows": 30420807,
+      "positives": 6184286,
+      "prevalence": 0.20329131965499797,
+      "tp": 2292567,
+      "fp": 1660932,
+      "tn": 22575589,
+      "fn": 3891719,
+      "precision": 0.5798830352556053,
+      "recall": 0.3707084374817077,
+      "f1": 0.4522816374582811,
+      "specificity": 0.931469867313052,
+      "balanced_accuracy": 0.6510891523973799,
+      "predicted_positive_rate": 0.12996035903978484,
+      "accuracy": 0.8174719362310146
+    },
+    "logistic_regression": {
+      "rows": 30420807,
+      "positives": 6184286,
+      "prevalence": 0.20329131965499797,
+      "tp": 3008002,
+      "fp": 2678169,
+      "tn": 21558352,
+      "fn": 3176284,
+      "precision": 0.5290030848527066,
+      "recall": 0.48639438732296664,
+      "f1": 0.5068047506511333,
+      "specificity": 0.8894986206972527,
+      "balanced_accuracy": 0.6879465040101097,
+      "predicted_positive_rate": 0.1869171649522644,
+      "accuracy": 0.8075510291360778,
+      "brier_score": 0.18223302288777532,
+      "roc_auc_approx": 0.7366230711847607,
+      "average_precision_approx": 0.4964792508014745
+    }
+  },
+  "probability_metric_method": "10,000-bin streaming approximation",
+  "gradient_boosted_trees": "optional_not_implemented",
+  "all_invariants_passed": true
+}

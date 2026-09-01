@@ -1,0 +1,146 @@
+{
+  "milestone": "MS7C",
+  "status": "stage_3_pilot",
+  "created_at_utc": "2026-08-20T20:42:24.928243+00:00",
+  "train_year": 2024,
+  "test_year": 2025,
+  "candidate_population": "MS7B tuples observed before target_year",
+  "model_order": [
+    "always_negative",
+    "previous_year_persistence",
+    "support_threshold",
+    "logistic_regression"
+  ],
+  "selected_support_threshold": 2,
+  "training_rows": 114369768,
+  "training_positives": 15450976,
+  "input_files": {
+    "target_year=2024": {
+      "sha256": "2996d4e173ef0ab715a04aff00737c905187daf6e3d89e4b3adfcfc68934f506",
+      "bytes": 473969978
+    },
+    "target_year=2025": {
+      "sha256": "4a234714c5f21588bfc0c772f9ef2b641bfdd8443976ede3afba8dd24b566447",
+      "bytes": 520461204
+    }
+  },
+  "feature_set": "m2",
+  "logistic_preprocessing": {
+    "features": [
+      "count_t1",
+      "count_t2",
+      "count_t3",
+      "count_t1_unavailable",
+      "count_t2_unavailable",
+      "count_t3_unavailable"
+    ],
+    "null_policy": "zero imputation plus explicit unavailable indicators for lag/present features in the active feature set",
+    "scaler_mean": [
+      1.1662448593932624,
+      1.0399281390515718,
+      0.7284712687359828,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "scaler_scale": [
+      9.475216163029218,
+      15.041982129012322,
+      15.037104223541107,
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "logistic_model": {
+    "implementation": "sklearn.linear_model.SGDClassifier",
+    "loss": "log_loss",
+    "penalty": "l2",
+    "alpha": 0.0001,
+    "class_weight_policy": "balanced sample weights computed from training year",
+    "decision_threshold": 0.5,
+    "coefficients": [
+      7.436682474709507,
+      3.773476502721566,
+      3.528982299427698,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "intercept": [
+      0.44744618300344446
+    ]
+  },
+  "metrics": {
+    "always_negative": {
+      "rows": 124265716,
+      "positives": 17537541,
+      "prevalence": 0.14112936024929032,
+      "tp": 0,
+      "fp": 0,
+      "tn": 106728175,
+      "fn": 17537541,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "specificity": 1.0,
+      "balanced_accuracy": 0.5,
+      "predicted_positive_rate": 0.0,
+      "accuracy": 0.8588706397507097
+    },
+    "previous_year_persistence": {
+      "rows": 124265716,
+      "positives": 17537541,
+      "prevalence": 0.14112936024929032,
+      "tp": 10866750,
+      "fp": 14480174,
+      "tn": 92248001,
+      "fn": 6670791,
+      "precision": 0.4287206605424784,
+      "recall": 0.6196279170494883,
+      "f1": 0.5067919117097531,
+      "specificity": 0.8643266035421293,
+      "balanced_accuracy": 0.7419772602958088,
+      "predicted_positive_rate": 0.20397358833871765,
+      "accuracy": 0.8297924344635812
+    },
+    "support_threshold": {
+      "rows": 124265716,
+      "positives": 17537541,
+      "prevalence": 0.14112936024929032,
+      "tp": 7337671,
+      "fp": 2894704,
+      "tn": 103833471,
+      "fn": 10199870,
+      "precision": 0.71710340952125,
+      "recall": 0.41839793845670836,
+      "f1": 0.5284618793949538,
+      "specificity": 0.9728777897682594,
+      "balanced_accuracy": 0.6956378641124839,
+      "predicted_positive_rate": 0.08234270343720548,
+      "accuracy": 0.8946244030815386
+    },
+    "logistic_regression": {
+      "rows": 124265716,
+      "positives": 17537541,
+      "prevalence": 0.14112936024929032,
+      "tp": 9650734,
+      "fp": 6740201,
+      "tn": 99987974,
+      "fn": 7886807,
+      "precision": 0.588784837472664,
+      "recall": 0.5502900321088344,
+      "f1": 0.5688869727010433,
+      "specificity": 0.9368470321918275,
+      "balanced_accuracy": 0.7435685321503309,
+      "predicted_positive_rate": 0.1319023100466423,
+      "accuracy": 0.8822924900702298,
+      "brier_score": 0.14206940102469287,
+      "roc_auc_approx": 0.8188417706412269,
+      "average_precision_approx": 0.5895141118306356
+    }
+  },
+  "probability_metric_method": "10,000-bin streaming approximation",
+  "gradient_boosted_trees": "optional_not_implemented",
+  "all_invariants_passed": true
+}

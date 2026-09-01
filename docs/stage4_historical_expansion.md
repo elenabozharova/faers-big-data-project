@@ -226,3 +226,45 @@ scripts fail with `ModuleNotFoundError` before doing anything.
   loaded, is **2016** (`2016-3=2013 >= first_year 2013`) -- computed directly
   from `build_temporal_features.py`'s `lag()` logic, not assumed, and
   confirmed by the new `test_stage4_three_complete_lags` test.
+
+## Promotion and downstream completion
+
+All of the above is now done. The sandbox's validated full 2013-2025 MS4A
+result was promoted to the production `data/interim/case_resolution/` index
+(backup preserved at `data/interim/case_resolution_pre_stage4_backup/`), and
+validated in place -- SHA-256 integrity, schema, CASEID uniqueness, and all
+13 years' included-case counts matched the sandbox's Run 2 table above
+exactly. No MS4A recomputation was needed.
+
+MS4B, MS5, MS6, and MS7A were then built for 2013-2022, additively --
+2023-2025's artifacts were left completely untouched (verified by checksum).
+MS7B was rebuilt across the full 2013-2025 range, and MS7C's baselines and
+logistic regression were rerun across every target year with three real lags
+(2016-2025). Full results, methodology, and interpretation are in
+[Historical Baseline v1](historical_baseline_v1.md).
+
+Three genuine pre-existing pipeline bugs were found and fixed while building
+this dataset, all newly exposed by the wider year range (each has a
+regression test):
+
+1. `integrate_global_case_assignments.py` raised a false-positive "later
+   follow-up PRIMARYIDs reached downstream" assertion for ~340/16.4M included
+   cases (2013-2021 only) where FAERS redundantly re-exported the identical
+   `(CASEID, CASEVERSION)` row in a later year -- the case's own winning
+   PRIMARYID was mistaken for a leaked followup of itself.
+2. `faers_utils.py`'s FAERS ASCII table loader assumed UTF-8; 2019 Q3's DRUG
+   file contains a Windows-1252 byte (`0xAD`, soft hyphen) that isn't valid
+   UTF-8. Now falls back to `cp1252` only on a confirmed UTF-8 decode failure.
+3. `build_multi_year_drug_vocabulary.py` hard-required a `prod_ai` column
+   that doesn't exist at all in 2013's FAERS DRUG table (added in a later
+   FAERS schema revision) -- fixed to tolerate its absence exactly like
+   `process_faers_case_level.py`'s `_choose_raw_drug_name()` already does.
+
+Two additional issues were fixed in the *shared, multi-year* output paths
+(`rebuild_global_downstream.py`'s `annual_summary_all_years.json` and
+`build_gold_annual_pair_reactions.py`'s whole-`output_root` staging) so that
+building new years additively can never destroy already-published years --
+the Gold-dataset one in particular would have deleted the entire validated
+2023-2025 Gold dataset the first time an additive year range was published
+with `--overwrite`. See [Historical Baseline v1](historical_baseline_v1.md)
+for full detail.

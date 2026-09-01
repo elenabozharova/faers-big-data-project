@@ -13,13 +13,13 @@ such as `CHEMBL25`.
 | MS1 | Complete |
 | MS2 | Complete: reproducible raw FAERS acquisition and provenance |
 | MS3 | Complete: raw schema and quality profiling |
-| MS4A | Complete and production-validated: global cross-year CASEID resolution |
-| MS4B | Complete and production-validated end to end |
-| MS5 | Complete and production-validated for 2023-2025: reusable multi-year drug vocabulary and conservative versioned exact mapping to ChEMBL 36 |
-| MS6 | Complete and production-validated for 2023-2025: final annual drug-pair-reaction support datasets |
-| MS7A | Complete and production-validated for 2023-2025: canonical partitioned annual pair-reaction Gold dataset |
-| MS7B | Complete and production-validated for the 2023-2025 pilot: temporal features and recurrence targets |
-| MS7C | Complete and production-validated for the Stage 3 pilot: ordered recurrence baselines and logistic regression |
+| MS4A | Complete and production-validated: global cross-year CASEID resolution, covering 2013-2025 |
+| MS4B | Complete and production-validated end to end for 2013-2025 |
+| MS5 | Complete and production-validated for 2023-2025 (untouched); additive versioned artifacts for 2013-2022 |
+| MS6 | Complete and production-validated for 2023-2025 (untouched); additive artifacts for 2013-2022 |
+| MS7A | Complete and production-validated for 2023-2025 (untouched); additive Gold partitions for 2013-2022, spanning 2013-2025 |
+| MS7B | Complete for the 2023-2025 pilot (untouched); full 2013-2025 rebuild for target years 2016-2025 |
+| MS7C | Complete and production-validated for the Stage 3 pilot; **Historical Baseline v1** reruns the same methodology across target years 2016-2025 with an M1/M2/M3 ablation -- see [Historical Baseline v1](docs/historical_baseline_v1.md) |
 | MS8A | Pending: PySpark pipeline implementation |
 | MS8B | Pending: Spark/local correctness and output parity |
 | MS8C | Pending: scaling benchmark and engine recommendation |
@@ -437,25 +437,18 @@ See the [MS7C specification](docs/ms7c_modeling_confluence.md) and
 The remaining sequence is documented in
 [MS7B/MS7C modeling and MS8A-MS8C PySpark requirements](docs/post_ms7_temporal_modeling_requirements.md):
 
-1. Complete the Stage 4 historical expansion for 2013-2022 after the pilot
-   pipeline works end to end. In progress: the pipeline is confirmed
-   range-configurable end to end, and all of 2013-2025 (52 quarters) is now
-   downloaded and verified via real download attempts against
-   `config/faers_sources.csv` -- including one genuine historical naming
-   exception (2018 Q1's `DEMO18Q1_new.txt`) caught by a failed download, not
-   assumed. A real cross-year MS4A resolution run has been validated against
-   an isolated output directory. MS4B, MS5, MS6, MS7A, and MS7B have not yet
-   been rerun for the historical years, and nothing has been promoted to the
-   production output paths. See
-   [Stage 4 historical expansion](docs/stage4_historical_expansion.md).
-2. Implement MS8A by porting the expensive data-engineering stages to PySpark.
-3. Complete MS8B correctness and output-parity validation.
-4. Complete MS8C by benchmarking the local pipeline against Spark over
+1. **Complete.** The Stage 4 historical expansion is done: the validated MS4A
+   result was promoted to production (2013-2025), and MS4B/MS5/MS6/MS7A were
+   built additively for 2013-2022 without touching the validated 2023-2025
+   artifacts. See [Stage 4 historical expansion](docs/stage4_historical_expansion.md).
+2. **Complete.** MS7B was rebuilt across the full 2013-2025 history and MS7C's
+   baselines and logistic regression were rerun across every target year with
+   three real lags (2016-2025), plus an M1/M2/M3 ablation, frozen as
+   **Historical Baseline v1**. See [Historical Baseline v1](docs/historical_baseline_v1.md).
+3. Implement MS8A by porting the expensive data-engineering stages to PySpark.
+4. Complete MS8B correctness and output-parity validation.
+5. Complete MS8C by benchmarking the local pipeline against Spark over
    increasing year ranges and documenting the engine recommendation.
 
 The complete milestone definition is maintained in the
 [MS8A-MS8C Confluence-ready specification](docs/ms8_pyspark_confluence.md).
-
-The expanded 2013-2022 history remains required before declaring the full
-three-lag modeling dataset production-complete for the intended historical
-study.

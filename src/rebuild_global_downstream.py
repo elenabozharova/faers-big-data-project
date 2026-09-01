@@ -35,7 +35,11 @@ DEFAULT_OUTPUT_ROOT = ROOT / "data/processed/faers_case_level_annual_final"
 DEFAULT_ASSIGNMENTS = ROOT / "data/interim/case_resolution/global_case_assignments.parquet"
 DEFAULT_MAPPING = ROOT / "data/processed/mappings/faers_to_chembl_2023_2025_chembl36_norm_v1_exact_v1.parquet"
 DEFAULT_REPORT_DIR = ROOT / "reports/data_quality"
-EXPECTED_CASES = {2023: 1_361_395, 2024: 1_308_773, 2025: 1_295_857}
+EXPECTED_CASES = {
+    2013: 738_292, 2014: 832_546, 2015: 1_162_457, 2016: 1_164_345, 2017: 1_211_308,
+    2018: 1_405_225, 2019: 1_413_737, 2020: 1_443_823, 2021: 1_535_120, 2022: 1_511_560,
+    2023: 1_361_395, 2024: 1_308_773, 2025: 1_295_857,
+}
 BOUNDARY_FILES = ("retained_cases.parquet", "resolved_drug_rows.parquet", "resolved_reac_rows.parquet")
 MISSING_REAC_2024 = {"24346610", "24346611", "24346612"}
 
@@ -122,6 +126,16 @@ class StageRecorder:
                 "temporary_storage_bytes": max(0, _directory_size(self.output_dir) - size_before),
                 "observed_or_peak_memory_mb": _observed_memory_mb(),
             })
+
+
+def merge_annual_summaries(existing: list[dict], new: list[dict]) -> list[dict]:
+    """Merge per-year MS6 summaries keyed by year: entries for years not in
+    `new` are preserved unchanged, entries for years in `new` are replaced.
+    Lets an additive run (e.g. adding historical years) extend the shared
+    all-years rollup without erasing previously completed years' entries."""
+    merged = {item["year"]: item for item in existing}
+    merged.update({item["year"]: item for item in new})
+    return [merged[year] for year in sorted(merged)]
 
 
 def input_paths(years: list[int], boundary_root: Path, assignments: Path, mapping: Path) -> list[Path]:
@@ -574,9 +588,12 @@ def main() -> None:
             "ms4b_ms6_legacy_global_downstream_comparison.csv",
         )
     ]
+    # annual_summary_all_years.json is a shared rollup index, not a per-year artifact --
+    # it is merged (see below), never blindly overwritten, so its prior existence must
+    # not block an additive run that only adds new years.
     combined_summary = args.out_dir / "annual_summary_all_years.json"
     if not args.overwrite:
-        existing = [path for path in [combined_summary, *report_outputs] if path.exists()]
+        existing = [path for path in report_outputs if path.exists()]
         if existing:
             raise FileExistsError(f"output exists; use --overwrite: {existing[0]}")
     before = hash_inputs(paths)
@@ -611,8 +628,14 @@ def main() -> None:
         pair_role_filter=args.pair_role_filter,
         max_rows_per_join_chunk=args.max_rows_per_join_chunk,
     )
-    with (args.out_dir / "annual_summary_all_years.json").open("w", encoding="utf-8") as stream:
-        json.dump(summaries, stream, indent=2, sort_keys=True)
+    existing_summaries = []
+    if combined_summary.is_file():
+        # utf-8-sig tolerates a leading BOM (present in the existing production file)
+        # while reading plain utf-8 identically when no BOM is present.
+        with combined_summary.open("r", encoding="utf-8-sig") as stream:
+            existing_summaries = json.load(stream)
+    with combined_summary.open("w", encoding="utf-8") as stream:
+        json.dump(merge_annual_summaries(existing_summaries, summaries), stream, indent=2, sort_keys=True)
         stream.write("\n")
     print(json.dumps({"years": years, "output_root": repository_path(args.out_dir),
                       "all_invariants_passed": True}, indent=2))

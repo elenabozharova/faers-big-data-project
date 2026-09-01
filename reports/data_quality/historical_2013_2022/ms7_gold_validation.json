@@ -1,0 +1,114 @@
+{
+  "milestone": "MS7A",
+  "created_at_utc": "2026-08-20T05:44:37.646740+00:00",
+  "schema": [
+    "year",
+    "drug_a",
+    "drug_b",
+    "reaction_pt",
+    "n_cases"
+  ],
+  "partitioning": "year",
+  "years": [
+    2013,
+    2014,
+    2015,
+    2016,
+    2017,
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025
+  ],
+  "total_rows": 256643925,
+  "partitions": [
+    {
+      "year": 2013,
+      "rows": 9283710,
+      "source": "data/processed/faers_case_level_annual_final/2013/drug_pair_reaction_counts.parquet",
+      "partition": "year=2013"
+    },
+    {
+      "year": 2014,
+      "rows": 12006020,
+      "source": "data/processed/faers_case_level_annual_final/2014/drug_pair_reaction_counts.parquet",
+      "partition": "year=2014"
+    },
+    {
+      "year": 2015,
+      "rows": 15229925,
+      "source": "data/processed/faers_case_level_annual_final/2015/drug_pair_reaction_counts.parquet",
+      "partition": "year=2015"
+    },
+    {
+      "year": 2016,
+      "rows": 18131944,
+      "source": "data/processed/faers_case_level_annual_final/2016/drug_pair_reaction_counts.parquet",
+      "partition": "year=2016"
+    },
+    {
+      "year": 2017,
+      "rows": 17748090,
+      "source": "data/processed/faers_case_level_annual_final/2017/drug_pair_reaction_counts.parquet",
+      "partition": "year=2017"
+    },
+    {
+      "year": 2018,
+      "rows": 19922764,
+      "source": "data/processed/faers_case_level_annual_final/2018/drug_pair_reaction_counts.parquet",
+      "partition": "year=2018"
+    },
+    {
+      "year": 2019,
+      "rows": 21135489,
+      "source": "data/processed/faers_case_level_annual_final/2019/drug_pair_reaction_counts.parquet",
+      "partition": "year=2019"
+    },
+    {
+      "year": 2020,
+      "rows": 24479378,
+      "source": "data/processed/faers_case_level_annual_final/2020/drug_pair_reaction_counts.parquet",
+      "partition": "year=2020"
+    },
+    {
+      "year": 2021,
+      "rows": 20001792,
+      "source": "data/processed/faers_case_level_annual_final/2021/drug_pair_reaction_counts.parquet",
+      "partition": "year=2021"
+    },
+    {
+      "year": 2022,
+      "rows": 21229772,
+      "source": "data/processed/faers_case_level_annual_final/2022/drug_pair_reaction_counts.parquet",
+      "partition": "year=2022"
+    },
+    {
+      "year": 2023,
+      "rows": 23256862,
+      "source": "data/processed/faers_case_level_annual_final/2023/drug_pair_reaction_counts.parquet",
+      "partition": "year=2023"
+    },
+    {
+      "year": 2024,
+      "rows": 25346924,
+      "source": "data/processed/faers_case_level_annual_final/2024/drug_pair_reaction_counts.parquet",
+      "partition": "year=2024"
+    },
+    {
+      "year": 2025,
+      "rows": 28871255,
+      "source": "data/processed/faers_case_level_annual_final/2025/drug_pair_reaction_counts.parquet",
+      "partition": "year=2025"
+    }
+  ],
+  "global_assignment_validation": {
+    "included_assignment_rows": 16384436,
+    "included_assignment_rows_for_requested_years": 12418413,
+    "caseids_assigned_to_multiple_years": 0
+  },
+  "all_invariants_passed": true
+}

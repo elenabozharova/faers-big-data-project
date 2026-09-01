@@ -1,0 +1,182 @@
+{
+  "milestone": "MS7C",
+  "status": "stage_3_pilot",
+  "created_at_utc": "2026-08-20T20:48:26.883404+00:00",
+  "train_year": 2020,
+  "test_year": 2021,
+  "candidate_population": "MS7B tuples observed before target_year",
+  "model_order": [
+    "always_negative",
+    "previous_year_persistence",
+    "support_threshold",
+    "logistic_regression"
+  ],
+  "selected_support_threshold": 1,
+  "training_rows": 74305569,
+  "training_positives": 12507538,
+  "input_files": {
+    "target_year=2020": {
+      "sha256": "c758a20329fa992c370b54d60a8f426ce7bbdb8d425ea42a955924ebd98e91eb",
+      "bytes": 304405880
+    },
+    "target_year=2021": {
+      "sha256": "054352edd12eadedc3b24e4e265c5a52ef2b35eee88b3e4fe07410c2c9bca51e",
+      "bytes": 356723963
+    }
+  },
+  "feature_set": "m3",
+  "logistic_preprocessing": {
+    "features": [
+      "count_t1",
+      "count_t2",
+      "count_t3",
+      "present_t1",
+      "present_t2",
+      "present_t3",
+      "historical_total",
+      "years_observed",
+      "years_since_last_seen",
+      "count_t1_unavailable",
+      "count_t2_unavailable",
+      "count_t3_unavailable",
+      "present_t1_unavailable",
+      "present_t2_unavailable",
+      "present_t3_unavailable"
+    ],
+    "null_policy": "zero imputation plus explicit unavailable indicators for lag/present features in the active feature set",
+    "scaler_mean": [
+      0.7142433160023308,
+      0.6097738784558663,
+      0.454478627301811,
+      0.28444017432932917,
+      0.26811939223559417,
+      0.23885275678327691,
+      3.035539758803273,
+      1.5269103450375305,
+      3.117021807611755,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "scaler_scale": [
+      6.274363731527654,
+      12.064601838505778,
+      2.49119695088334,
+      0.4511473834090475,
+      0.442980116644991,
+      0.42638259504851456,
+      19.139451990719287,
+      1.1254574223953684,
+      1.919465541208852,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "logistic_model": {
+    "implementation": "sklearn.linear_model.SGDClassifier",
+    "loss": "log_loss",
+    "penalty": "l2",
+    "alpha": 0.0001,
+    "class_weight_policy": "balanced sample weights computed from training year",
+    "decision_threshold": 0.5,
+    "coefficients": [
+      2.2804036295090917,
+      0.2392125987459964,
+      0.07649450529719132,
+      0.00043649768481072917,
+      0.006859962995739969,
+      -0.035505789101506015,
+      0.6809933226358111,
+      0.7107739860522491,
+      -0.3315526885787183,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "intercept": [
+      -0.22410034969854578
+    ]
+  },
+  "metrics": {
+    "always_negative": {
+      "rows": 86277409,
+      "positives": 11057451,
+      "prevalence": 0.12816160253491155,
+      "tp": 0,
+      "fp": 0,
+      "tn": 75219958,
+      "fn": 11057451,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "specificity": 1.0,
+      "balanced_accuracy": 0.5,
+      "predicted_positive_rate": 0.0,
+      "accuracy": 0.8718383974650885
+    },
+    "previous_year_persistence": {
+      "rows": 86277409,
+      "positives": 11057451,
+      "prevalence": 0.12816160253491155,
+      "tp": 7023288,
+      "fp": 17456090,
+      "tn": 57763868,
+      "fn": 4034163,
+      "precision": 0.2869063094658696,
+      "recall": 0.6351633844002564,
+      "f1": 0.3952681315488222,
+      "specificity": 0.7679327340225316,
+      "balanced_accuracy": 0.7015480592113941,
+      "predicted_positive_rate": 0.28372871049013537,
+      "accuracy": 0.7509168014074229
+    },
+    "support_threshold": {
+      "rows": 86277409,
+      "positives": 11057451,
+      "prevalence": 0.12816160253491155,
+      "tp": 7023288,
+      "fp": 17456090,
+      "tn": 57763868,
+      "fn": 4034163,
+      "precision": 0.2869063094658696,
+      "recall": 0.6351633844002564,
+      "f1": 0.3952681315488222,
+      "specificity": 0.7679327340225316,
+      "balanced_accuracy": 0.7015480592113941,
+      "predicted_positive_rate": 0.28372871049013537,
+      "accuracy": 0.7509168014074229
+    },
+    "logistic_regression": {
+      "rows": 86277409,
+      "positives": 11057451,
+      "prevalence": 0.12816160253491155,
+      "tp": 7386310,
+      "fp": 12087157,
+      "tn": 63132801,
+      "fn": 3671141,
+      "precision": 0.3793012307464305,
+      "recall": 0.6679939165002856,
+      "f1": 0.48385770778330345,
+      "specificity": 0.8393091764289472,
+      "balanced_accuracy": 0.7536515464646164,
+      "predicted_positive_rate": 0.2257076009317804,
+      "accuracy": 0.8173531381778051,
+      "brier_score": 0.1681099032306999,
+      "roc_auc_approx": 0.8179924384249797,
+      "average_precision_approx": 0.5369577050408991
+    }
+  },
+  "probability_metric_method": "10,000-bin streaming approximation",
+  "gradient_boosted_trees": "optional_not_implemented",
+  "all_invariants_passed": true
+}

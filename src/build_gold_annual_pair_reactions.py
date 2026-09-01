@@ -134,43 +134,61 @@ def build_gold(
     years: list[int], input_root: Path, output_root: Path, assignments: Path,
     report_path: Path, batch_size: int, overwrite: bool,
 ) -> dict:
-    if output_root.exists() and not overwrite:
-        raise FileExistsError(f"output already exists: {output_root}; pass --overwrite to replace it")
+    # Each requested year is staged and published atomically on its own (like MS4B/MS6),
+    # so adding new years never touches -- let alone deletes -- already-published years'
+    # partitions. A prior version staged the *entire* output_root and swapped it in whole,
+    # which would have silently destroyed every other year's Gold partition the moment
+    # this was run for a year range that didn't include them.
+    if not overwrite:
+        existing_years = [year for year in years if (output_root / f"year={year}").exists()]
+        if existing_years:
+            raise FileExistsError(
+                f"output already exists for year(s) {existing_years}; pass --overwrite to replace"
+            )
     assignment_result = validate_global_assignments(assignments, years)
-    output_root.parent.mkdir(parents=True, exist_ok=True)
-    staging = Path(tempfile.mkdtemp(prefix=f".{output_root.name}-", dir=output_root.parent))
+    output_root.mkdir(parents=True, exist_ok=True)
     results = []
-    try:
-        for year in years:
-            partition = staging / f"year={year}"
-            partition.mkdir()
+    for year in years:
+        staging = Path(tempfile.mkdtemp(prefix=f".year={year}-", dir=output_root))
+        try:
             result = publish_year(
                 input_root / str(year) / "drug_pair_reaction_counts.parquet",
-                partition / "part-00000.parquet", year, batch_size,
+                staging / "part-00000.parquet", year, batch_size,
             )
-            results.append(result)
-        metadata = {
-            "milestone": "MS7A",
-            "created_at_utc": datetime.now(timezone.utc).isoformat(),
-            "schema": GOLD_COLUMNS,
-            "partitioning": "year",
-            "years": years,
-            "total_rows": sum(item["rows"] for item in results),
-            "partitions": results,
-            "global_assignment_validation": assignment_result,
-            "all_invariants_passed": True,
-        }
-        (staging / "_SUCCESS").touch()
-        (staging / "_metadata.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
-        if output_root.exists():
-            shutil.rmtree(output_root)
-        staging.replace(output_root)
-        report_path.parent.mkdir(parents=True, exist_ok=True)
-        report_path.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
-        return metadata
-    except Exception:
-        shutil.rmtree(staging, ignore_errors=True)
-        raise
+        except Exception:
+            shutil.rmtree(staging, ignore_errors=True)
+            raise
+        final_dir = output_root / f"year={year}"
+        if final_dir.exists():
+            shutil.rmtree(final_dir)
+        staging.replace(final_dir)
+        results.append(result)
+
+    metadata_path = output_root / "_metadata.json"
+    existing_partitions = []
+    if metadata_path.is_file():
+        with metadata_path.open("r", encoding="utf-8-sig") as stream:
+            existing_partitions = json.load(stream).get("partitions", [])
+    merged = {item["year"]: item for item in existing_partitions}
+    merged.update({item["year"]: item for item in results})
+    all_partitions = [merged[year] for year in sorted(merged)]
+
+    metadata = {
+        "milestone": "MS7A",
+        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+        "schema": GOLD_COLUMNS,
+        "partitioning": "year",
+        "years": sorted(merged),
+        "total_rows": sum(item["rows"] for item in all_partitions),
+        "partitions": all_partitions,
+        "global_assignment_validation": assignment_result,
+        "all_invariants_passed": True,
+    }
+    (output_root / "_SUCCESS").touch()
+    metadata_path.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+    return metadata
 
 
 def main() -> int:

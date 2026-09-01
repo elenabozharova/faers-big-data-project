@@ -1,0 +1,11 @@
+year,legacy_retained_cases,global_retained_cases,removed_annual_appearances,legacy_case_reactions,global_case_reactions,legacy_case_drugs,global_case_drugs,legacy_case_drug_pairs,global_case_drug_pairs,legacy_case_pair_reactions,global_case_pair_reactions,legacy_unique_pair_reaction_patterns,global_unique_pair_reaction_patterns,legacy_min3_patterns,global_min3_patterns,legacy_min5_patterns,global_min5_patterns,legacy_min10_patterns,global_min10_patterns
+2013,,738292,-738292,unavailable,709962,unavailable,1381792,unavailable,2914326,unavailable,13751961,unavailable,9283710,unavailable,779449,unavailable,293245,unavailable,60252
+2014,,832546,-832546,unavailable,800637,unavailable,1724529,unavailable,4037265,unavailable,18469525,unavailable,12006020,unavailable,1096429,unavailable,415991,unavailable,106425
+2015,,1162457,-1162457,unavailable,1106865,unavailable,2695289,unavailable,6819125,unavailable,27456250,unavailable,15229925,unavailable,1926975,unavailable,808545,unavailable,241434
+2016,,1164345,-1164345,unavailable,1105264,unavailable,2932249,unavailable,8956857,unavailable,33727629,unavailable,18131944,unavailable,2401048,unavailable,1047364,unavailable,324828
+2017,,1211308,-1211308,unavailable,1129519,unavailable,2922576,unavailable,8217005,unavailable,33770293,unavailable,17748090,unavailable,2369768,unavailable,1081028,unavailable,359382
+2018,,1405225,-1405225,unavailable,1318715,unavailable,3746001,unavailable,11723041,unavailable,45309595,unavailable,19922764,unavailable,3410015,unavailable,1639123,unavailable,552528
+2019,,1413737,-1413737,unavailable,1347025,unavailable,3686509,unavailable,11686818,unavailable,53072256,unavailable,21135489,unavailable,3913987,unavailable,1953291,unavailable,712365
+2020,,1443823,-1443823,unavailable,1370705,unavailable,3842522,unavailable,12834522,unavailable,70882833,unavailable,24479378,unavailable,4938567,unavailable,2620726,unavailable,1033010
+2021,,1535120,-1535120,unavailable,1465368,unavailable,3667758,unavailable,11201275,unavailable,83315090,unavailable,20001792,unavailable,4446535,unavailable,2552579,unavailable,1100292
+2022,,1511560,-1511560,unavailable,1447735,unavailable,3464750,unavailable,11298895,unavailable,118936340,unavailable,21229772,unavailable,5099931,unavailable,3209628,unavailable,1732151

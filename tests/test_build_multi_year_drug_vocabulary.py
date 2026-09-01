@@ -48,6 +48,32 @@ class MultiYearVocabularyTests(unittest.TestCase):
             with self.subTest(values=values), self.assertRaises(ValueError):
                 vocab.parse_years(values)
 
+    def test_missing_prod_ai_column_treated_as_blank(self):
+        """Stage 4 (2013-2022): prod_ai was added to the FAERS DRUG table
+        after 2013, so 2013's resolved_drug_rows.parquet genuinely has no
+        prod_ai column (not just null values). resolve_annual_drug_inputs
+        must not hard-require it, and the vocabulary build must fall back to
+        drugname exactly like _choose_raw_drug_name() already does elsewhere."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "annual"
+            (root / "2013").mkdir(parents=True)
+            pd.DataFrame([
+                {"caseid": "01", "primaryid": "001", "drugname": "Ibuprofen 200mg"},
+            ]).to_parquet(root / "2013" / "resolved_drug_rows.parquet", index=False)
+            assignments = pd.DataFrame([
+                {"caseid": "01", "selected_primaryid": "001", "assigned_report_year": 2013,
+                 "assignment_status": "included"},
+            ])
+            assignment_path = Path(directory) / "assignments.parquet"
+            assignments.to_parquet(assignment_path, index=False)
+
+            inputs = vocab.resolve_annual_drug_inputs(root, [2013], "resolved_drug_rows.parquet")
+            result, annual, metadata = vocab.build_multi_year_vocabulary(
+                inputs, assignments_path=assignment_path, sample_raw_names_limit=2, batch_size=2,
+            )
+        self.assertIn("ibuprofen", set(result["normalized_drug_name"]))
+        self.assertEqual(annual.set_index("year").loc[2013, "resolved_drug_rows"], 1)
+
     def test_input_resolution_failures(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

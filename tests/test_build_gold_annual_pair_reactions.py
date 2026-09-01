@@ -1,3 +1,4 @@
+import json
 import sys
 import tempfile
 import unittest
@@ -37,6 +38,41 @@ class GoldDatasetTests(unittest.TestCase):
             self.assertEqual(result["total_rows"], 2)
             self.assertTrue((output / "_SUCCESS").exists())
             self.assertTrue(report.exists())
+
+    def test_additive_year_run_preserves_other_years_partitions(self):
+        """Stage 4 (2013-2022): building Gold for new years must never delete
+        or touch already-published years' partitions. A prior implementation
+        staged and swapped the *entire* output_root, which would have wiped
+        out every other year's partition the moment this ran for a
+        non-overlapping year range (e.g. adding 2013-2022 after 2023-2025)."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            assignments_rows = []
+            for year in (2024, 2013):
+                source_dir = root / "input" / str(year)
+                source_dir.mkdir(parents=True)
+                pd.DataFrame([
+                    {"year": year, "drug_a": "CHEMBL1", "drug_b": "CHEMBL2", "reaction_pt": "a",
+                     "n_cases": 1, "pair_role_filter": "all_pairs"},
+                ]).to_parquet(source_dir / "drug_pair_reaction_counts.parquet", index=False)
+                assignments_rows.append({"caseid": str(year), "assigned_report_year": year,
+                                          "assignment_status": "included"})
+            assignments = root / "assignments.parquet"
+            pd.DataFrame(assignments_rows).to_parquet(assignments, index=False)
+            output = root / "gold"
+            report = root / "report.json"
+
+            gold.build_gold([2024], root / "input", output, assignments, report, 1, False)
+            self.assertTrue((output / "year=2024" / "part-00000.parquet").exists())
+
+            gold.build_gold([2013], root / "input", output, assignments, report, 1, False)
+            self.assertTrue((output / "year=2024" / "part-00000.parquet").exists(),
+                             "adding 2013 must not delete the existing 2024 partition")
+            self.assertTrue((output / "year=2013" / "part-00000.parquet").exists())
+            with (output / "_metadata.json").open() as handle:
+                metadata = json.load(handle)
+            self.assertEqual(metadata["years"], [2013, 2024])
+            self.assertEqual(metadata["total_rows"], 2)
 
     def test_rejects_invalid_pair_order(self):
         frame = pd.DataFrame([{
