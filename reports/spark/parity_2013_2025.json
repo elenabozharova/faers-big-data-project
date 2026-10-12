@@ -1,0 +1,153 @@
+{
+  "description": "MS8B parity: Spark output vs production Gold data/gold/annual_pair_reactions, compared with DuckDB (keys and n_cases, both directions)",
+  "command": "python src/spark_pair_reactions.py --years 2013-2025 --cores 8 --check-against data/gold/annual_pair_reactions",
+  "also_validated": "2013 at --cores 1 (identical, 52.8 s)",
+  "all_identical": true,
+  "total_rows": 256643925,
+  "total_seconds": 1293.9,
+  "years": [
+    {
+      "year": 2013,
+      "seconds": 28.085,
+      "spark_rows": 9283710,
+      "gold_rows": 9283710,
+      "spark_duplicate_keys": 0,
+      "keys_only_in_spark": 0,
+      "keys_only_in_gold": 0,
+      "n_cases_mismatches": 0,
+      "identical": true
+    },
+    {
+      "year": 2014,
+      "seconds": 25.939,
+      "spark_rows": 12006020,
+      "gold_rows": 12006020,
+      "spark_duplicate_keys": 0,
+      "keys_only_in_spark": 0,
+      "keys_only_in_gold": 0,
+      "n_cases_mismatches": 0,
+      "identical": true
+    },
+    {
+      "year": 2015,
+      "seconds": 37.985,
+      "spark_rows": 15229925,
+      "gold_rows": 15229925,
+      "spark_duplicate_keys": 0,
+      "keys_only_in_spark": 0,
+      "keys_only_in_gold": 0,
+      "n_cases_mismatches": 0,
+      "identical": true
+    },
+    {
+      "year": 2016,
+      "seconds": 62.039,
+      "spark_rows": 18131944,
+      "gold_rows": 18131944,
+      "spark_duplicate_keys": 0,
+      "keys_only_in_spark": 0,
+      "keys_only_in_gold": 0,
+      "n_cases_mismatches": 0,
+      "identical": true
+    },
+    {
+      "year": 2017,
+      "seconds": 48.893,
+      "spark_rows": 17748090,
+      "gold_rows": 17748090,
+      "spark_duplicate_keys": 0,
+      "keys_only_in_spark": 0,
+      "keys_only_in_gold": 0,
+      "n_cases_mismatches": 0,
+      "identical": true
+    },
+    {
+      "year": 2018,
+      "seconds": 71.264,
+      "spark_rows": 19922764,
+      "gold_rows": 19922764,
+      "spark_duplicate_keys": 0,
+      "keys_only_in_spark": 0,
+      "keys_only_in_gold": 0,
+      "n_cases_mismatches": 0,
+      "identical": true
+    },
+    {
+      "year": 2019,
+      "seconds": 80.455,
+      "spark_rows": 21135489,
+      "gold_rows": 21135489,
+      "spark_duplicate_keys": 0,
+      "keys_only_in_spark": 0,
+      "keys_only_in_gold": 0,
+      "n_cases_mismatches": 0,
+      "identical": true
+    },
+    {
+      "year": 2020,
+      "seconds": 98.913,
+      "spark_rows": 24479378,
+      "gold_rows": 24479378,
+      "spark_duplicate_keys": 0,
+      "keys_only_in_spark": 0,
+      "keys_only_in_gold": 0,
+      "n_cases_mismatches": 0,
+      "identical": true
+    },
+    {
+      "year": 2021,
+      "seconds": 91.459,
+      "spark_rows": 20001792,
+      "gold_rows": 20001792,
+      "spark_duplicate_keys": 0,
+      "keys_only_in_spark": 0,
+      "keys_only_in_gold": 0,
+      "n_cases_mismatches": 0,
+      "identical": true
+    },
+    {
+      "year": 2022,
+      "seconds": 117.939,
+      "spark_rows": 21229772,
+      "gold_rows": 21229772,
+      "spark_duplicate_keys": 0,
+      "keys_only_in_spark": 0,
+      "keys_only_in_gold": 0,
+      "n_cases_mismatches": 0,
+      "identical": true
+    },
+    {
+      "year": 2023,
+      "seconds": 129.487,
+      "spark_rows": 23256862,
+      "gold_rows": 23256862,
+      "spark_duplicate_keys": 0,
+      "keys_only_in_spark": 0,
+      "keys_only_in_gold": 0,
+      "n_cases_mismatches": 0,
+      "identical": true
+    },
+    {
+      "year": 2024,
+      "seconds": 273.201,
+      "spark_rows": 25346924,
+      "gold_rows": 25346924,
+      "spark_duplicate_keys": 0,
+      "keys_only_in_spark": 0,
+      "keys_only_in_gold": 0,
+      "n_cases_mismatches": 0,
+      "identical": true
+    },
+    {
+      "year": 2025,
+      "seconds": 228.207,
+      "spark_rows": 28871255,
+      "gold_rows": 28871255,
+      "spark_duplicate_keys": 0,
+      "keys_only_in_spark": 0,
+      "keys_only_in_gold": 0,
+      "n_cases_mismatches": 0,
+      "identical": true
+    }
+  ]
+}

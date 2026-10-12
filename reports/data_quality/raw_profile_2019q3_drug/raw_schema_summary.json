@@ -1,0 +1,131 @@
+{
+  "archives_profiled": 1,
+  "archives_requested": 1,
+  "chunk_size": 250000,
+  "columns_absent_by_partition": [],
+  "columns_first_seen": {
+    "DRUG.caseid": "2019Q3",
+    "DRUG.cum_dose_chr": "2019Q3",
+    "DRUG.cum_dose_unit": "2019Q3",
+    "DRUG.dechal": "2019Q3",
+    "DRUG.dose_amt": "2019Q3",
+    "DRUG.dose_form": "2019Q3",
+    "DRUG.dose_freq": "2019Q3",
+    "DRUG.dose_unit": "2019Q3",
+    "DRUG.dose_vbm": "2019Q3",
+    "DRUG.drug_seq": "2019Q3",
+    "DRUG.drugname": "2019Q3",
+    "DRUG.exp_dt": "2019Q3",
+    "DRUG.lot_num": "2019Q3",
+    "DRUG.nda_num": "2019Q3",
+    "DRUG.primaryid": "2019Q3",
+    "DRUG.prod_ai": "2019Q3",
+    "DRUG.rechal": "2019Q3",
+    "DRUG.role_cod": "2019Q3",
+    "DRUG.route": "2019Q3",
+    "DRUG.val_vbm": "2019Q3"
+  },
+  "failed_tables": 0,
+  "generated_at_utc": "2026-10-12T18:07:15.320116Z",
+  "is_sampled": false,
+  "largest_tables": [
+    {
+      "quarter": 3,
+      "row_count": 1982442,
+      "table": "DRUG",
+      "year": 2019
+    }
+  ],
+  "max_rows_per_table": null,
+  "missing_expected_columns_by_partition": [],
+  "normalized_column_raw_forms": {
+    "DEMO": {},
+    "DRUG": {},
+    "REAC": {}
+  },
+  "output_profile_csv": "reports/data_quality/raw_profile_2019q3_drug/raw_schema_profile.csv",
+  "quality_warnings": [
+    {
+      "error": "",
+      "quarter": 3,
+      "table": "DRUG",
+      "warnings": [
+        "not valid UTF-8, decoded as cp1252",
+        "missing_drugname=125",
+        "missing_prod_ai=44233"
+      ],
+      "year": 2019
+    }
+  ],
+  "raw_directory": "data/raw/faers",
+  "requested_quarters": [
+    3
+  ],
+  "requested_tables": [
+    "DRUG"
+  ],
+  "requested_years": [
+    2019
+  ],
+  "runtime_seconds": 16.051,
+  "schema_drift_events": [],
+  "schema_variant_count_by_table": {
+    "DRUG": 1
+  },
+  "schema_variants": {
+    "DEMO": {},
+    "DRUG": {
+      "403dd99f3f2fb7c080acad2f7fdaee7bb9b9d1f329736fc5cd2d5de247bda8cb": {
+        "normalized_column_names": [
+          "primaryid",
+          "caseid",
+          "drug_seq",
+          "role_cod",
+          "drugname",
+          "prod_ai",
+          "val_vbm",
+          "route",
+          "dose_vbm",
+          "cum_dose_chr",
+          "cum_dose_unit",
+          "dechal",
+          "rechal",
+          "lot_num",
+          "exp_dt",
+          "nda_num",
+          "dose_amt",
+          "dose_unit",
+          "dose_form",
+          "dose_freq"
+        ],
+        "partitions": [
+          "2019Q3"
+        ]
+      }
+    },
+    "REAC": {}
+  },
+  "smallest_tables": [
+    {
+      "quarter": 3,
+      "row_count": 1982442,
+      "table": "DRUG",
+      "year": 2019
+    }
+  ],
+  "source_manifest": "config/faers_sources.csv",
+  "successful_tables": 1,
+  "tables_profiled": 1,
+  "tables_requested": 1,
+  "total_rows_by_table": {
+    "DRUG": 1982442
+  },
+  "total_rows_by_year": {
+    "2019": 1982442
+  },
+  "total_rows_by_year_and_table": {
+    "2019": {
+      "DRUG": 1982442
+    }
+  }
+}

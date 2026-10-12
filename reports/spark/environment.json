@@ -1,0 +1,20 @@
+{
+  "machine": {
+    "cpu": "AMD Ryzen AI 9 HX 370 w/ Radeon 890M",
+    "physical_cores": 12,
+    "logical_processors": 24,
+    "ram_gb": 31.1,
+    "disk": "MTFDKBA1T0QFM-1BD1AABGB (SSD, NVMe)",
+    "os": "Microsoft Windows 11 Home 10.0.26200"
+  },
+  "software": {
+    "python": "3.13.5",
+    "pyspark": "4.2.0",
+    "java": "OpenJDK 17.0.20.1 (Eclipse Temurin)",
+    "pandas": "3.0.5",
+    "pyarrow": "25.0.0",
+    "duckdb": "1.5.5"
+  },
+  "spark_mode": "local[N] single node; driver memory 6g; shuffle partitions max(8, 4*N); AQE default on",
+  "notes": "Output collected per year via Arrow and written with pyarrow (no winutils on Windows). Free commit memory during runs was about 7 GB, so a 12g heap could not be allocated."
+}

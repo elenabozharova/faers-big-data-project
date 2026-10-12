@@ -40,3 +40,5 @@ Thumbs.db
 # ---------------------------------------------------------------------------
 .claude/
 CLAUDE.local.md
+
+reports/figures/paper/*.pdf

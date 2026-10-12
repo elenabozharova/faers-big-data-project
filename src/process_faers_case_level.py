@@ -675,6 +675,16 @@ def save_case_resolution_artifacts(
 # Milestone 4 -- dedupe reactions per case (case_reactions.parquet)
 # ---------------------------------------------------------------------------
 
+def normalize_reaction_pt(pt: pd.Series) -> pd.Series:
+    """pt -> reaction_pt: lowercase, strip, collapse internal whitespace; blank -> NA.
+    Shared with spark_pair_reactions.py so both engines use identical string semantics."""
+    normalized = (
+        pt.fillna("").astype(str).str.strip().str.lower()
+        .str.replace(r"\s+", " ", regex=True)
+    )
+    return normalized.replace("", pd.NA)
+
+
 def build_case_reactions(resolved_reac_df: pd.DataFrame) -> tuple:
     """
     Build the case-level adverse-event table from resolved_reac_rows (which
@@ -698,11 +708,7 @@ def build_case_reactions(resolved_reac_df: pd.DataFrame) -> tuple:
     working = resolved_reac_df.copy()
 
     # Step 1: normalize pt -> reaction_pt
-    normalized = (
-        working["pt"].fillna("").astype(str).str.strip().str.lower()
-        .str.replace(r"\s+", " ", regex=True)
-    )
-    working["reaction_pt"] = normalized.replace("", pd.NA)
+    working["reaction_pt"] = normalize_reaction_pt(working["pt"])
 
     # Step 2: drop missing caseid / missing reaction_pt
     missing_caseid_mask = _is_missing(working["caseid"])

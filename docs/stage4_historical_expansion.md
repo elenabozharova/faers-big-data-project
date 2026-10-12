@@ -22,8 +22,11 @@ against actual downloaded 2016 data and the real MS4A resolver:
 
 1. **Is 2013-2022 the same FAERS ASCII format as 2023-2025?** Yes for 2016
    (spot-checked; see below). FDA switched from "Legacy AERS" to "FAERS"
-   format at 2012 Q3, so 2013-2022 should be uniformly compatible, but only
-   2016 has actually been verified.
+   format after 2012 Q3 (the last AERS file, partial to 27 Aug 2012; the first
+   FAERS file is 2012 Q4), so 2013-2022 should be uniformly compatible, but only
+   2016 had been verified at this point. The later full raw profile
+   (`reports/data_quality/raw_profile_2013_2025/`) found one schema change
+   inside the window, at 2014 Q3 (new fields, e.g. DRUG `prod_ai`).
 2. **Does global CASEID resolution still behave correctly when the loaded
    year range widens?** Yes, with one non-obvious caveat documented below.
 

@@ -1,0 +1,2169 @@
+{
+  "archives_profiled": 52,
+  "archives_requested": 52,
+  "chunk_size": 250000,
+  "columns_absent_by_partition": [
+    {
+      "columns": [
+        "age_grp",
+        "auth_num",
+        "lit_ref",
+        "sex"
+      ],
+      "quarter": 1,
+      "table": "DEMO",
+      "year": 2013
+    },
+    {
+      "columns": [
+        "age_grp",
+        "auth_num",
+        "lit_ref",
+        "sex"
+      ],
+      "quarter": 2,
+      "table": "DEMO",
+      "year": 2013
+    },
+    {
+      "columns": [
+        "age_grp",
+        "auth_num",
+        "lit_ref",
+        "sex"
+      ],
+      "quarter": 3,
+      "table": "DEMO",
+      "year": 2013
+    },
+    {
+      "columns": [
+        "age_grp",
+        "auth_num",
+        "lit_ref",
+        "sex"
+      ],
+      "quarter": 4,
+      "table": "DEMO",
+      "year": 2013
+    },
+    {
+      "columns": [
+        "age_grp",
+        "auth_num",
+        "lit_ref",
+        "sex"
+      ],
+      "quarter": 1,
+      "table": "DEMO",
+      "year": 2014
+    },
+    {
+      "columns": [
+        "age_grp",
+        "auth_num",
+        "lit_ref",
+        "sex"
+      ],
+      "quarter": 2,
+      "table": "DEMO",
+      "year": 2014
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 3,
+      "table": "DEMO",
+      "year": 2014
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 4,
+      "table": "DEMO",
+      "year": 2014
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 1,
+      "table": "DEMO",
+      "year": 2015
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 2,
+      "table": "DEMO",
+      "year": 2015
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 3,
+      "table": "DEMO",
+      "year": 2015
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 4,
+      "table": "DEMO",
+      "year": 2015
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 1,
+      "table": "DEMO",
+      "year": 2016
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 2,
+      "table": "DEMO",
+      "year": 2016
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 3,
+      "table": "DEMO",
+      "year": 2016
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 4,
+      "table": "DEMO",
+      "year": 2016
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 1,
+      "table": "DEMO",
+      "year": 2017
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 2,
+      "table": "DEMO",
+      "year": 2017
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 3,
+      "table": "DEMO",
+      "year": 2017
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 4,
+      "table": "DEMO",
+      "year": 2017
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 1,
+      "table": "DEMO",
+      "year": 2018
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 2,
+      "table": "DEMO",
+      "year": 2018
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 3,
+      "table": "DEMO",
+      "year": 2018
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 4,
+      "table": "DEMO",
+      "year": 2018
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 1,
+      "table": "DEMO",
+      "year": 2019
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 2,
+      "table": "DEMO",
+      "year": 2019
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 3,
+      "table": "DEMO",
+      "year": 2019
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 4,
+      "table": "DEMO",
+      "year": 2019
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 1,
+      "table": "DEMO",
+      "year": 2020
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 2,
+      "table": "DEMO",
+      "year": 2020
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 3,
+      "table": "DEMO",
+      "year": 2020
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 4,
+      "table": "DEMO",
+      "year": 2020
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 1,
+      "table": "DEMO",
+      "year": 2021
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 2,
+      "table": "DEMO",
+      "year": 2021
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 3,
+      "table": "DEMO",
+      "year": 2021
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 4,
+      "table": "DEMO",
+      "year": 2021
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 1,
+      "table": "DEMO",
+      "year": 2022
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 2,
+      "table": "DEMO",
+      "year": 2022
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 3,
+      "table": "DEMO",
+      "year": 2022
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 4,
+      "table": "DEMO",
+      "year": 2022
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 1,
+      "table": "DEMO",
+      "year": 2023
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 2,
+      "table": "DEMO",
+      "year": 2023
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 3,
+      "table": "DEMO",
+      "year": 2023
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 4,
+      "table": "DEMO",
+      "year": 2023
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 1,
+      "table": "DEMO",
+      "year": 2024
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 2,
+      "table": "DEMO",
+      "year": 2024
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 3,
+      "table": "DEMO",
+      "year": 2024
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 4,
+      "table": "DEMO",
+      "year": 2024
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 1,
+      "table": "DEMO",
+      "year": 2025
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 2,
+      "table": "DEMO",
+      "year": 2025
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 3,
+      "table": "DEMO",
+      "year": 2025
+    },
+    {
+      "columns": [
+        "gndr_cod"
+      ],
+      "quarter": 4,
+      "table": "DEMO",
+      "year": 2025
+    },
+    {
+      "columns": [
+        "prod_ai"
+      ],
+      "quarter": 1,
+      "table": "DRUG",
+      "year": 2013
+    },
+    {
+      "columns": [
+        "prod_ai"
+      ],
+      "quarter": 2,
+      "table": "DRUG",
+      "year": 2013
+    },
+    {
+      "columns": [
+        "prod_ai"
+      ],
+      "quarter": 3,
+      "table": "DRUG",
+      "year": 2013
+    },
+    {
+      "columns": [
+        "prod_ai"
+      ],
+      "quarter": 4,
+      "table": "DRUG",
+      "year": 2013
+    },
+    {
+      "columns": [
+        "prod_ai"
+      ],
+      "quarter": 1,
+      "table": "DRUG",
+      "year": 2014
+    },
+    {
+      "columns": [
+        "prod_ai"
+      ],
+      "quarter": 2,
+      "table": "DRUG",
+      "year": 2014
+    },
+    {
+      "columns": [
+        "drug_rec_act"
+      ],
+      "quarter": 1,
+      "table": "REAC",
+      "year": 2013
+    },
+    {
+      "columns": [
+        "drug_rec_act"
+      ],
+      "quarter": 2,
+      "table": "REAC",
+      "year": 2013
+    },
+    {
+      "columns": [
+        "drug_rec_act"
+      ],
+      "quarter": 3,
+      "table": "REAC",
+      "year": 2013
+    },
+    {
+      "columns": [
+        "drug_rec_act"
+      ],
+      "quarter": 4,
+      "table": "REAC",
+      "year": 2013
+    },
+    {
+      "columns": [
+        "drug_rec_act"
+      ],
+      "quarter": 1,
+      "table": "REAC",
+      "year": 2014
+    },
+    {
+      "columns": [
+        "drug_rec_act"
+      ],
+      "quarter": 2,
+      "table": "REAC",
+      "year": 2014
+    }
+  ],
+  "columns_first_seen": {
+    "DEMO.age": "2013Q1",
+    "DEMO.age_cod": "2013Q1",
+    "DEMO.age_grp": "2014Q3",
+    "DEMO.auth_num": "2014Q3",
+    "DEMO.caseid": "2013Q1",
+    "DEMO.caseversion": "2013Q1",
+    "DEMO.e_sub": "2013Q1",
+    "DEMO.event_dt": "2013Q1",
+    "DEMO.fda_dt": "2013Q1",
+    "DEMO.gndr_cod": "2013Q1",
+    "DEMO.i_f_code": "2013Q1",
+    "DEMO.init_fda_dt": "2013Q1",
+    "DEMO.lit_ref": "2014Q3",
+    "DEMO.mfr_dt": "2013Q1",
+    "DEMO.mfr_num": "2013Q1",
+    "DEMO.mfr_sndr": "2013Q1",
+    "DEMO.occp_cod": "2013Q1",
+    "DEMO.occr_country": "2013Q1",
+    "DEMO.primaryid": "2013Q1",
+    "DEMO.reporter_country": "2013Q1",
+    "DEMO.rept_cod": "2013Q1",
+    "DEMO.rept_dt": "2013Q1",
+    "DEMO.sex": "2014Q3",
+    "DEMO.to_mfr": "2013Q1",
+    "DEMO.wt": "2013Q1",
+    "DEMO.wt_cod": "2013Q1",
+    "DRUG.caseid": "2013Q1",
+    "DRUG.cum_dose_chr": "2013Q1",
+    "DRUG.cum_dose_unit": "2013Q1",
+    "DRUG.dechal": "2013Q1",
+    "DRUG.dose_amt": "2013Q1",
+    "DRUG.dose_form": "2013Q1",
+    "DRUG.dose_freq": "2013Q1",
+    "DRUG.dose_unit": "2013Q1",
+    "DRUG.dose_vbm": "2013Q1",
+    "DRUG.drug_seq": "2013Q1",
+    "DRUG.drugname": "2013Q1",
+    "DRUG.exp_dt": "2013Q1",
+    "DRUG.lot_num": "2013Q1",
+    "DRUG.nda_num": "2013Q1",
+    "DRUG.primaryid": "2013Q1",
+    "DRUG.prod_ai": "2014Q3",
+    "DRUG.rechal": "2013Q1",
+    "DRUG.role_cod": "2013Q1",
+    "DRUG.route": "2013Q1",
+    "DRUG.val_vbm": "2013Q1",
+    "REAC.caseid": "2013Q1",
+    "REAC.drug_rec_act": "2014Q3",
+    "REAC.primaryid": "2013Q1",
+    "REAC.pt": "2013Q1"
+  },
+  "failed_tables": 1,
+  "generated_at_utc": "2026-10-12T18:02:07.467970Z",
+  "is_sampled": false,
+  "largest_tables": [
+    {
+      "quarter": 2,
+      "row_count": 2291903,
+      "table": "DRUG",
+      "year": 2021
+    },
+    {
+      "quarter": 3,
+      "row_count": 2260570,
+      "table": "DRUG",
+      "year": 2021
+    },
+    {
+      "quarter": 1,
+      "row_count": 2208416,
+      "table": "DRUG",
+      "year": 2021
+    },
+    {
+      "quarter": 3,
+      "row_count": 2148451,
+      "table": "DRUG",
+      "year": 2025
+    },
+    {
+      "quarter": 4,
+      "row_count": 2030938,
+      "table": "DRUG",
+      "year": 2024
+    },
+    {
+      "quarter": 1,
+      "row_count": 2008162,
+      "table": "DRUG",
+      "year": 2025
+    },
+    {
+      "quarter": 4,
+      "row_count": 2006967,
+      "table": "DRUG",
+      "year": 2022
+    },
+    {
+      "quarter": 1,
+      "row_count": 1994171,
+      "table": "DRUG",
+      "year": 2022
+    },
+    {
+      "quarter": 2,
+      "row_count": 1987872,
+      "table": "DRUG",
+      "year": 2018
+    },
+    {
+      "quarter": 1,
+      "row_count": 1943532,
+      "table": "DRUG",
+      "year": 2020
+    }
+  ],
+  "max_rows_per_table": null,
+  "missing_expected_columns_by_partition": [
+    {
+      "columns": [
+        "prod_ai"
+      ],
+      "quarter": 1,
+      "table": "DRUG",
+      "year": 2013
+    },
+    {
+      "columns": [
+        "prod_ai"
+      ],
+      "quarter": 2,
+      "table": "DRUG",
+      "year": 2013
+    },
+    {
+      "columns": [
+        "prod_ai"
+      ],
+      "quarter": 3,
+      "table": "DRUG",
+      "year": 2013
+    },
+    {
+      "columns": [
+        "prod_ai"
+      ],
+      "quarter": 4,
+      "table": "DRUG",
+      "year": 2013
+    },
+    {
+      "columns": [
+        "prod_ai"
+      ],
+      "quarter": 1,
+      "table": "DRUG",
+      "year": 2014
+    },
+    {
+      "columns": [
+        "prod_ai"
+      ],
+      "quarter": 2,
+      "table": "DRUG",
+      "year": 2014
+    }
+  ],
+  "normalized_column_raw_forms": {
+    "DEMO": {},
+    "DRUG": {},
+    "REAC": {}
+  },
+  "output_profile_csv": "reports/data_quality/raw_profile_2013_2025/raw_schema_profile.csv",
+  "quality_warnings": [
+    {
+      "error": "",
+      "quarter": 1,
+      "table": "DRUG",
+      "warnings": [
+        "missing expected column: prod_ai",
+        "missing_drugname=9",
+        "missing_role_cod=1"
+      ],
+      "year": 2013
+    },
+    {
+      "error": "",
+      "quarter": 2,
+      "table": "DRUG",
+      "warnings": [
+        "missing expected column: prod_ai",
+        "missing_drugname=3"
+      ],
+      "year": 2013
+    },
+    {
+      "error": "",
+      "quarter": 3,
+      "table": "DRUG",
+      "warnings": [
+        "missing expected column: prod_ai",
+        "missing_drugname=2"
+      ],
+      "year": 2013
+    },
+    {
+      "error": "",
+      "quarter": 4,
+      "table": "DRUG",
+      "warnings": [
+        "missing expected column: prod_ai",
+        "missing_drugname=3"
+      ],
+      "year": 2013
+    },
+    {
+      "error": "",
+      "quarter": 1,
+      "table": "DRUG",
+      "warnings": [
+        "missing expected column: prod_ai",
+        "missing_drugname=7",
+        "missing_role_cod=1"
+      ],
+      "year": 2014
+    },
+    {
+      "error": "",
+      "quarter": 2,
+      "table": "DRUG",
+      "warnings": [
+        "missing expected column: prod_ai",
+        "missing_drugname=4"
+      ],
+      "year": 2014
+    },
+    {
+      "error": "",
+      "quarter": 3,
+      "table": "DRUG",
+      "warnings": [
+        "missing_drugname=7",
+        "missing_prod_ai=27522"
+      ],
+      "year": 2014
+    },
+    {
+      "error": "",
+      "quarter": 3,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=5"
+      ],
+      "year": 2014
+    },
+    {
+      "error": "",
+      "quarter": 4,
+      "table": "DRUG",
+      "warnings": [
+        "missing_drugname=6",
+        "missing_prod_ai=26784"
+      ],
+      "year": 2014
+    },
+    {
+      "error": "",
+      "quarter": 4,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=3"
+      ],
+      "year": 2014
+    },
+    {
+      "error": "",
+      "quarter": 1,
+      "table": "DRUG",
+      "warnings": [
+        "missing_drugname=9",
+        "missing_prod_ai=34122",
+        "missing_role_cod=1"
+      ],
+      "year": 2015
+    },
+    {
+      "error": "",
+      "quarter": 1,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=13"
+      ],
+      "year": 2015
+    },
+    {
+      "error": "",
+      "quarter": 2,
+      "table": "DRUG",
+      "warnings": [
+        "missing_drugname=1",
+        "missing_prod_ai=32357"
+      ],
+      "year": 2015
+    },
+    {
+      "error": "",
+      "quarter": 2,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=8"
+      ],
+      "year": 2015
+    },
+    {
+      "error": "",
+      "quarter": 3,
+      "table": "DRUG",
+      "warnings": [
+        "missing_prod_ai=34688"
+      ],
+      "year": 2015
+    },
+    {
+      "error": "",
+      "quarter": 3,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=5"
+      ],
+      "year": 2015
+    },
+    {
+      "error": "",
+      "quarter": 4,
+      "table": "DRUG",
+      "warnings": [
+        "missing_prod_ai=27530"
+      ],
+      "year": 2015
+    },
+    {
+      "error": "",
+      "quarter": 4,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=5"
+      ],
+      "year": 2015
+    },
+    {
+      "error": "",
+      "quarter": 1,
+      "table": "DRUG",
+      "warnings": [
+        "missing_prod_ai=27574"
+      ],
+      "year": 2016
+    },
+    {
+      "error": "",
+      "quarter": 1,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=7"
+      ],
+      "year": 2016
+    },
+    {
+      "error": "",
+      "quarter": 2,
+      "table": "DRUG",
+      "warnings": [
+        "missing_drugname=4",
+        "missing_prod_ai=28382",
+        "missing_both_drugname_and_prod_ai=3"
+      ],
+      "year": 2016
+    },
+    {
+      "error": "",
+      "quarter": 2,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=7"
+      ],
+      "year": 2016
+    },
+    {
+      "error": "",
+      "quarter": 3,
+      "table": "DRUG",
+      "warnings": [
+        "missing_prod_ai=31385"
+      ],
+      "year": 2016
+    },
+    {
+      "error": "",
+      "quarter": 3,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=6"
+      ],
+      "year": 2016
+    },
+    {
+      "error": "",
+      "quarter": 4,
+      "table": "DRUG",
+      "warnings": [
+        "missing_drugname=1",
+        "missing_prod_ai=27860"
+      ],
+      "year": 2016
+    },
+    {
+      "error": "",
+      "quarter": 4,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=7"
+      ],
+      "year": 2016
+    },
+    {
+      "error": "",
+      "quarter": 1,
+      "table": "DRUG",
+      "warnings": [
+        "missing_prod_ai=28270"
+      ],
+      "year": 2017
+    },
+    {
+      "error": "",
+      "quarter": 1,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=5"
+      ],
+      "year": 2017
+    },
+    {
+      "error": "",
+      "quarter": 2,
+      "table": "DRUG",
+      "warnings": [
+        "missing_prod_ai=25429"
+      ],
+      "year": 2017
+    },
+    {
+      "error": "",
+      "quarter": 2,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=3"
+      ],
+      "year": 2017
+    },
+    {
+      "error": "",
+      "quarter": 3,
+      "table": "DRUG",
+      "warnings": [
+        "missing_prod_ai=27175"
+      ],
+      "year": 2017
+    },
+    {
+      "error": "",
+      "quarter": 3,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=5"
+      ],
+      "year": 2017
+    },
+    {
+      "error": "",
+      "quarter": 4,
+      "table": "DRUG",
+      "warnings": [
+        "missing_prod_ai=22916",
+        "missing_role_cod=1"
+      ],
+      "year": 2017
+    },
+    {
+      "error": "",
+      "quarter": 4,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=12"
+      ],
+      "year": 2017
+    },
+    {
+      "error": "",
+      "quarter": 1,
+      "table": "DRUG",
+      "warnings": [
+        "missing_drugname=11",
+        "missing_prod_ai=28760"
+      ],
+      "year": 2018
+    },
+    {
+      "error": "",
+      "quarter": 1,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=7"
+      ],
+      "year": 2018
+    },
+    {
+      "error": "",
+      "quarter": 2,
+      "table": "DRUG",
+      "warnings": [
+        "missing_drugname=4",
+        "missing_prod_ai=33480"
+      ],
+      "year": 2018
+    },
+    {
+      "error": "",
+      "quarter": 2,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=12"
+      ],
+      "year": 2018
+    },
+    {
+      "error": "",
+      "quarter": 3,
+      "table": "DRUG",
+      "warnings": [
+        "missing_drugname=18",
+        "missing_prod_ai=38106",
+        "missing_both_drugname_and_prod_ai=1"
+      ],
+      "year": 2018
+    },
+    {
+      "error": "",
+      "quarter": 3,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=13"
+      ],
+      "year": 2018
+    },
+    {
+      "error": "",
+      "quarter": 4,
+      "table": "DRUG",
+      "warnings": [
+        "missing_drugname=12",
+        "missing_prod_ai=34850"
+      ],
+      "year": 2018
+    },
+    {
+      "error": "",
+      "quarter": 4,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=13"
+      ],
+      "year": 2018
+    },
+    {
+      "error": "",
+      "quarter": 1,
+      "table": "DRUG",
+      "warnings": [
+        "missing_drugname=10",
+        "missing_prod_ai=31728"
+      ],
+      "year": 2019
+    },
+    {
+      "error": "",
+      "quarter": 1,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=11"
+      ],
+      "year": 2019
+    },
+    {
+      "error": "",
+      "quarter": 2,
+      "table": "DRUG",
+      "warnings": [
+        "missing_drugname=17",
+        "missing_prod_ai=35824"
+      ],
+      "year": 2019
+    },
+    {
+      "error": "",
+      "quarter": 2,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=7"
+      ],
+      "year": 2019
+    },
+    {
+      "error": "'utf-8' codec can't decode byte 0xad in position 126098: invalid start byte",
+      "quarter": 3,
+      "table": "DRUG",
+      "warnings": [
+        "profile failed"
+      ],
+      "year": 2019
+    },
+    {
+      "error": "",
+      "quarter": 3,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=6"
+      ],
+      "year": 2019
+    },
+    {
+      "error": "",
+      "quarter": 4,
+      "table": "DRUG",
+      "warnings": [
+        "missing_drugname=235",
+        "missing_prod_ai=38931"
+      ],
+      "year": 2019
+    },
+    {
+      "error": "",
+      "quarter": 4,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=10"
+      ],
+      "year": 2019
+    },
+    {
+      "error": "",
+      "quarter": 1,
+      "table": "DRUG",
+      "warnings": [
+        "missing_drugname=143",
+        "missing_prod_ai=44420"
+      ],
+      "year": 2020
+    },
+    {
+      "error": "",
+      "quarter": 1,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=5"
+      ],
+      "year": 2020
+    },
+    {
+      "error": "",
+      "quarter": 2,
+      "table": "DRUG",
+      "warnings": [
+        "missing_drugname=125",
+        "missing_prod_ai=47900"
+      ],
+      "year": 2020
+    },
+    {
+      "error": "",
+      "quarter": 2,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=9"
+      ],
+      "year": 2020
+    },
+    {
+      "error": "",
+      "quarter": 3,
+      "table": "DRUG",
+      "warnings": [
+        "missing_drugname=151",
+        "missing_prod_ai=37053"
+      ],
+      "year": 2020
+    },
+    {
+      "error": "",
+      "quarter": 3,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=4"
+      ],
+      "year": 2020
+    },
+    {
+      "error": "",
+      "quarter": 4,
+      "table": "DRUG",
+      "warnings": [
+        "missing_drugname=175",
+        "missing_prod_ai=38062"
+      ],
+      "year": 2020
+    },
+    {
+      "error": "",
+      "quarter": 4,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=11"
+      ],
+      "year": 2020
+    },
+    {
+      "error": "",
+      "quarter": 1,
+      "table": "DRUG",
+      "warnings": [
+        "missing_drugname=150",
+        "missing_prod_ai=42230"
+      ],
+      "year": 2021
+    },
+    {
+      "error": "",
+      "quarter": 1,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=8"
+      ],
+      "year": 2021
+    },
+    {
+      "error": "",
+      "quarter": 2,
+      "table": "DRUG",
+      "warnings": [
+        "missing_drugname=142",
+        "missing_prod_ai=37238"
+      ],
+      "year": 2021
+    },
+    {
+      "error": "",
+      "quarter": 2,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=1"
+      ],
+      "year": 2021
+    },
+    {
+      "error": "",
+      "quarter": 3,
+      "table": "DRUG",
+      "warnings": [
+        "missing_drugname=106",
+        "missing_prod_ai=35527"
+      ],
+      "year": 2021
+    },
+    {
+      "error": "",
+      "quarter": 3,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=5"
+      ],
+      "year": 2021
+    },
+    {
+      "error": "",
+      "quarter": 4,
+      "table": "DRUG",
+      "warnings": [
+        "missing_drugname=29",
+        "missing_prod_ai=34413",
+        "duplicate_primaryid_drug_seq_rows=109"
+      ],
+      "year": 2021
+    },
+    {
+      "error": "",
+      "quarter": 4,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=16218"
+      ],
+      "year": 2021
+    },
+    {
+      "error": "",
+      "quarter": 1,
+      "table": "DRUG",
+      "warnings": [
+        "missing_drugname=1",
+        "missing_prod_ai=39647",
+        "duplicate_primaryid_drug_seq_rows=130"
+      ],
+      "year": 2022
+    },
+    {
+      "error": "",
+      "quarter": 1,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=19749"
+      ],
+      "year": 2022
+    },
+    {
+      "error": "",
+      "quarter": 2,
+      "table": "DRUG",
+      "warnings": [
+        "missing_drugname=1",
+        "missing_prod_ai=39579",
+        "duplicate_primaryid_drug_seq_rows=165"
+      ],
+      "year": 2022
+    },
+    {
+      "error": "",
+      "quarter": 2,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=18688"
+      ],
+      "year": 2022
+    },
+    {
+      "error": "",
+      "quarter": 3,
+      "table": "DRUG",
+      "warnings": [
+        "missing_drugname=4",
+        "missing_prod_ai=41874",
+        "duplicate_primaryid_drug_seq_rows=197"
+      ],
+      "year": 2022
+    },
+    {
+      "error": "",
+      "quarter": 3,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=18987"
+      ],
+      "year": 2022
+    },
+    {
+      "error": "",
+      "quarter": 4,
+      "table": "DRUG",
+      "warnings": [
+        "missing_drugname=1",
+        "missing_prod_ai=52938",
+        "duplicate_primaryid_drug_seq_rows=147"
+      ],
+      "year": 2022
+    },
+    {
+      "error": "",
+      "quarter": 4,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=23925"
+      ],
+      "year": 2022
+    },
+    {
+      "error": "",
+      "quarter": 1,
+      "table": "DRUG",
+      "warnings": [
+        "missing_drugname=1",
+        "missing_prod_ai=44293",
+        "duplicate_primaryid_drug_seq_rows=146"
+      ],
+      "year": 2023
+    },
+    {
+      "error": "",
+      "quarter": 1,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=22403"
+      ],
+      "year": 2023
+    },
+    {
+      "error": "",
+      "quarter": 2,
+      "table": "DRUG",
+      "warnings": [
+        "missing_drugname=1",
+        "missing_prod_ai=41616",
+        "duplicate_primaryid_drug_seq_rows=154"
+      ],
+      "year": 2023
+    },
+    {
+      "error": "",
+      "quarter": 2,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=21567"
+      ],
+      "year": 2023
+    },
+    {
+      "error": "",
+      "quarter": 3,
+      "table": "DRUG",
+      "warnings": [
+        "missing_prod_ai=33905",
+        "missing_role_cod=2",
+        "duplicate_primaryid_drug_seq_rows=151"
+      ],
+      "year": 2023
+    },
+    {
+      "error": "",
+      "quarter": 3,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=18471"
+      ],
+      "year": 2023
+    },
+    {
+      "error": "",
+      "quarter": 4,
+      "table": "DRUG",
+      "warnings": [
+        "missing_prod_ai=33992",
+        "duplicate_primaryid_drug_seq_rows=185"
+      ],
+      "year": 2023
+    },
+    {
+      "error": "",
+      "quarter": 4,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=22715"
+      ],
+      "year": 2023
+    },
+    {
+      "error": "",
+      "quarter": 1,
+      "table": "DRUG",
+      "warnings": [
+        "missing_prod_ai=33747",
+        "duplicate_primaryid_drug_seq_rows=92"
+      ],
+      "year": 2024
+    },
+    {
+      "error": "",
+      "quarter": 1,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=21934"
+      ],
+      "year": 2024
+    },
+    {
+      "error": "",
+      "quarter": 2,
+      "table": "DRUG",
+      "warnings": [
+        "missing_drugname=1",
+        "missing_prod_ai=32228",
+        "duplicate_primaryid_drug_seq_rows=1249"
+      ],
+      "year": 2024
+    },
+    {
+      "error": "",
+      "quarter": 2,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=21798"
+      ],
+      "year": 2024
+    },
+    {
+      "error": "",
+      "quarter": 3,
+      "table": "DRUG",
+      "warnings": [
+        "missing_prod_ai=30927",
+        "duplicate_primaryid_drug_seq_rows=3946"
+      ],
+      "year": 2024
+    },
+    {
+      "error": "",
+      "quarter": 3,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=18898"
+      ],
+      "year": 2024
+    },
+    {
+      "error": "",
+      "quarter": 4,
+      "table": "DRUG",
+      "warnings": [
+        "missing_drugname=7",
+        "missing_prod_ai=30030",
+        "duplicate_primaryid_drug_seq_rows=36155"
+      ],
+      "year": 2024
+    },
+    {
+      "error": "",
+      "quarter": 4,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=20252"
+      ],
+      "year": 2024
+    },
+    {
+      "error": "",
+      "quarter": 1,
+      "table": "DRUG",
+      "warnings": [
+        "missing_prod_ai=31933",
+        "duplicate_primaryid_drug_seq_rows=46753"
+      ],
+      "year": 2025
+    },
+    {
+      "error": "",
+      "quarter": 1,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=18571"
+      ],
+      "year": 2025
+    },
+    {
+      "error": "",
+      "quarter": 2,
+      "table": "DRUG",
+      "warnings": [
+        "missing_prod_ai=30873",
+        "duplicate_primaryid_drug_seq_rows=62667"
+      ],
+      "year": 2025
+    },
+    {
+      "error": "",
+      "quarter": 2,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=17244"
+      ],
+      "year": 2025
+    },
+    {
+      "error": "",
+      "quarter": 3,
+      "table": "DRUG",
+      "warnings": [
+        "missing_prod_ai=37089",
+        "duplicate_primaryid_drug_seq_rows=80855"
+      ],
+      "year": 2025
+    },
+    {
+      "error": "",
+      "quarter": 3,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=18045"
+      ],
+      "year": 2025
+    },
+    {
+      "error": "",
+      "quarter": 4,
+      "table": "DRUG",
+      "warnings": [
+        "missing_prod_ai=33826",
+        "duplicate_primaryid_drug_seq_rows=139578"
+      ],
+      "year": 2025
+    },
+    {
+      "error": "",
+      "quarter": 4,
+      "table": "REAC",
+      "warnings": [
+        "duplicate_primaryid_pt_rows=16319"
+      ],
+      "year": 2025
+    }
+  ],
+  "raw_directory": "data/raw/faers",
+  "requested_quarters": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "requested_tables": [
+    "DEMO",
+    "DRUG",
+    "REAC"
+  ],
+  "requested_years": [
+    2013,
+    2014,
+    2015,
+    2016,
+    2017,
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025
+  ],
+  "runtime_seconds": 1330.346,
+  "schema_drift_events": [
+    {
+      "columns_added": [
+        "age_grp",
+        "auth_num",
+        "lit_ref",
+        "sex"
+      ],
+      "columns_removed": [
+        "gndr_cod"
+      ],
+      "current_year_quarter": "2014Q3",
+      "only_casing_or_spacing_changed": false,
+      "previous_year_quarter": "2014Q2",
+      "table": "DEMO"
+    },
+    {
+      "columns_added": [
+        "prod_ai"
+      ],
+      "columns_removed": [],
+      "current_year_quarter": "2014Q3",
+      "only_casing_or_spacing_changed": false,
+      "previous_year_quarter": "2014Q2",
+      "table": "DRUG"
+    },
+    {
+      "columns_added": [
+        "drug_rec_act"
+      ],
+      "columns_removed": [],
+      "current_year_quarter": "2014Q3",
+      "only_casing_or_spacing_changed": false,
+      "previous_year_quarter": "2014Q2",
+      "table": "REAC"
+    }
+  ],
+  "schema_variant_count_by_table": {
+    "DEMO": 2,
+    "DRUG": 2,
+    "REAC": 2
+  },
+  "schema_variants": {
+    "DEMO": {
+      "1aab3bfeab869e89eb131ed9a1be503c8edda878b095f3bd389be9d01d91f5e7": {
+        "normalized_column_names": [
+          "primaryid",
+          "caseid",
+          "caseversion",
+          "i_f_code",
+          "event_dt",
+          "mfr_dt",
+          "init_fda_dt",
+          "fda_dt",
+          "rept_cod",
+          "auth_num",
+          "mfr_num",
+          "mfr_sndr",
+          "lit_ref",
+          "age",
+          "age_cod",
+          "age_grp",
+          "sex",
+          "e_sub",
+          "wt",
+          "wt_cod",
+          "rept_dt",
+          "to_mfr",
+          "occp_cod",
+          "reporter_country",
+          "occr_country"
+        ],
+        "partitions": [
+          "2014Q3",
+          "2014Q4",
+          "2015Q1",
+          "2015Q2",
+          "2015Q3",
+          "2015Q4",
+          "2016Q1",
+          "2016Q2",
+          "2016Q3",
+          "2016Q4",
+          "2017Q1",
+          "2017Q2",
+          "2017Q3",
+          "2017Q4",
+          "2018Q1",
+          "2018Q2",
+          "2018Q3",
+          "2018Q4",
+          "2019Q1",
+          "2019Q2",
+          "2019Q3",
+          "2019Q4",
+          "2020Q1",
+          "2020Q2",
+          "2020Q3",
+          "2020Q4",
+          "2021Q1",
+          "2021Q2",
+          "2021Q3",
+          "2021Q4",
+          "2022Q1",
+          "2022Q2",
+          "2022Q3",
+          "2022Q4",
+          "2023Q1",
+          "2023Q2",
+          "2023Q3",
+          "2023Q4",
+          "2024Q1",
+          "2024Q2",
+          "2024Q3",
+          "2024Q4",
+          "2025Q1",
+          "2025Q2",
+          "2025Q3",
+          "2025Q4"
+        ]
+      },
+      "6c7752d1a0732e1a0cfabaa791d1922df0596a37c1d8f374dc63a42db5f533be": {
+        "normalized_column_names": [
+          "primaryid",
+          "caseid",
+          "caseversion",
+          "i_f_code",
+          "event_dt",
+          "mfr_dt",
+          "init_fda_dt",
+          "fda_dt",
+          "rept_cod",
+          "mfr_num",
+          "mfr_sndr",
+          "age",
+          "age_cod",
+          "gndr_cod",
+          "e_sub",
+          "wt",
+          "wt_cod",
+          "rept_dt",
+          "to_mfr",
+          "occp_cod",
+          "reporter_country",
+          "occr_country"
+        ],
+        "partitions": [
+          "2013Q1",
+          "2013Q2",
+          "2013Q3",
+          "2013Q4",
+          "2014Q1",
+          "2014Q2"
+        ]
+      }
+    },
+    "DRUG": {
+      "403dd99f3f2fb7c080acad2f7fdaee7bb9b9d1f329736fc5cd2d5de247bda8cb": {
+        "normalized_column_names": [
+          "primaryid",
+          "caseid",
+          "drug_seq",
+          "role_cod",
+          "drugname",
+          "prod_ai",
+          "val_vbm",
+          "route",
+          "dose_vbm",
+          "cum_dose_chr",
+          "cum_dose_unit",
+          "dechal",
+          "rechal",
+          "lot_num",
+          "exp_dt",
+          "nda_num",
+          "dose_amt",
+          "dose_unit",
+          "dose_form",
+          "dose_freq"
+        ],
+        "partitions": [
+          "2014Q3",
+          "2014Q4",
+          "2015Q1",
+          "2015Q2",
+          "2015Q3",
+          "2015Q4",
+          "2016Q1",
+          "2016Q2",
+          "2016Q3",
+          "2016Q4",
+          "2017Q1",
+          "2017Q2",
+          "2017Q3",
+          "2017Q4",
+          "2018Q1",
+          "2018Q2",
+          "2018Q3",
+          "2018Q4",
+          "2019Q1",
+          "2019Q2",
+          "2019Q4",
+          "2020Q1",
+          "2020Q2",
+          "2020Q3",
+          "2020Q4",
+          "2021Q1",
+          "2021Q2",
+          "2021Q3",
+          "2021Q4",
+          "2022Q1",
+          "2022Q2",
+          "2022Q3",
+          "2022Q4",
+          "2023Q1",
+          "2023Q2",
+          "2023Q3",
+          "2023Q4",
+          "2024Q1",
+          "2024Q2",
+          "2024Q3",
+          "2024Q4",
+          "2025Q1",
+          "2025Q2",
+          "2025Q3",
+          "2025Q4"
+        ]
+      },
+      "74f9d67a4cb756f5a1e3d86a91c939e58752afecf015206a12e3ee7fe92ad40f": {
+        "normalized_column_names": [
+          "primaryid",
+          "caseid",
+          "drug_seq",
+          "role_cod",
+          "drugname",
+          "val_vbm",
+          "route",
+          "dose_vbm",
+          "cum_dose_chr",
+          "cum_dose_unit",
+          "dechal",
+          "rechal",
+          "lot_num",
+          "exp_dt",
+          "nda_num",
+          "dose_amt",
+          "dose_unit",
+          "dose_form",
+          "dose_freq"
+        ],
+        "partitions": [
+          "2013Q1",
+          "2013Q2",
+          "2013Q3",
+          "2013Q4",
+          "2014Q1",
+          "2014Q2"
+        ]
+      }
+    },
+    "REAC": {
+      "28b3358a841e52dad9c068cb2a7a1ed7adc499e530da370a0c27ee1399f0c214": {
+        "normalized_column_names": [
+          "primaryid",
+          "caseid",
+          "pt",
+          "drug_rec_act"
+        ],
+        "partitions": [
+          "2014Q3",
+          "2014Q4",
+          "2015Q1",
+          "2015Q2",
+          "2015Q3",
+          "2015Q4",
+          "2016Q1",
+          "2016Q2",
+          "2016Q3",
+          "2016Q4",
+          "2017Q1",
+          "2017Q2",
+          "2017Q3",
+          "2017Q4",
+          "2018Q1",
+          "2018Q2",
+          "2018Q3",
+          "2018Q4",
+          "2019Q1",
+          "2019Q2",
+          "2019Q3",
+          "2019Q4",
+          "2020Q1",
+          "2020Q2",
+          "2020Q3",
+          "2020Q4",
+          "2021Q1",
+          "2021Q2",
+          "2021Q3",
+          "2021Q4",
+          "2022Q1",
+          "2022Q2",
+          "2022Q3",
+          "2022Q4",
+          "2023Q1",
+          "2023Q2",
+          "2023Q3",
+          "2023Q4",
+          "2024Q1",
+          "2024Q2",
+          "2024Q3",
+          "2024Q4",
+          "2025Q1",
+          "2025Q2",
+          "2025Q3",
+          "2025Q4"
+        ]
+      },
+      "75757084e71c85877d5e6c8f473cda98952c68c6c6cb31d28273ec5c0e5da225": {
+        "normalized_column_names": [
+          "primaryid",
+          "caseid",
+          "pt"
+        ],
+        "partitions": [
+          "2013Q1",
+          "2013Q2",
+          "2013Q3",
+          "2013Q4",
+          "2014Q1",
+          "2014Q2"
+        ]
+      }
+    }
+  },
+  "smallest_tables": [
+    {
+      "quarter": 2,
+      "row_count": 171764,
+      "table": "DEMO",
+      "year": 2013
+    },
+    {
+      "quarter": 3,
+      "row_count": 185569,
+      "table": "DEMO",
+      "year": 2013
+    },
+    {
+      "quarter": 4,
+      "row_count": 207964,
+      "table": "DEMO",
+      "year": 2014
+    },
+    {
+      "quarter": 3,
+      "row_count": 211308,
+      "table": "DEMO",
+      "year": 2014
+    },
+    {
+      "quarter": 1,
+      "row_count": 223016,
+      "table": "DEMO",
+      "year": 2013
+    },
+    {
+      "quarter": 2,
+      "row_count": 223845,
+      "table": "DEMO",
+      "year": 2014
+    },
+    {
+      "quarter": 4,
+      "row_count": 232247,
+      "table": "DEMO",
+      "year": 2013
+    },
+    {
+      "quarter": 1,
+      "row_count": 260057,
+      "table": "DEMO",
+      "year": 2014
+    },
+    {
+      "quarter": 2,
+      "row_count": 289270,
+      "table": "DEMO",
+      "year": 2015
+    },
+    {
+      "quarter": 4,
+      "row_count": 309534,
+      "table": "DEMO",
+      "year": 2016
+    }
+  ],
+  "source_manifest": "config/faers_sources.csv",
+  "successful_tables": 155,
+  "tables_profiled": 155,
+  "tables_requested": 156,
+  "total_rows_by_table": {
+    "DEMO": 19478153,
+    "DRUG": 78518879,
+    "REAC": 62796891
+  },
+  "total_rows_by_year": {
+    "2013": 5939651,
+    "2014": 6569913,
+    "2015": 9548657,
+    "2016": 9837458,
+    "2017": 10242008,
+    "2018": 13737192,
+    "2019": 12530196,
+    "2020": 15271645,
+    "2021": 16331771,
+    "2022": 15566876,
+    "2023": 14991176,
+    "2024": 15151088,
+    "2025": 15076292
+  },
+  "total_rows_by_year_and_table": {
+    "2013": {
+      "DEMO": 812596,
+      "DRUG": 2648695,
+      "REAC": 2478360
+    },
+    "2014": {
+      "DEMO": 903174,
+      "DRUG": 2955869,
+      "REAC": 2710870
+    },
+    "2015": {
+      "DEMO": 1319905,
+      "DRUG": 4408910,
+      "REAC": 3819842
+    },
+    "2016": {
+      "DEMO": 1304885,
+      "DRUG": 4751139,
+      "REAC": 3781434
+    },
+    "2017": {
+      "DEMO": 1369547,
+      "DRUG": 4856431,
+      "REAC": 4016030
+    },
+    "2018": {
+      "DEMO": 1684852,
+      "DRUG": 6873134,
+      "REAC": 5179206
+    },
+    "2019": {
+      "DEMO": 1727296,
+      "DRUG": 5226174,
+      "REAC": 5576726
+    },
+    "2020": {
+      "DEMO": 1757369,
+      "DRUG": 7583026,
+      "REAC": 5931250
+    },
+    "2021": {
+      "DEMO": 1860388,
+      "DRUG": 8539564,
+      "REAC": 5931819
+    },
+    "2022": {
+      "DEMO": 1827395,
+      "DRUG": 7664702,
+      "REAC": 6074779
+    },
+    "2023": {
+      "DEMO": 1673637,
+      "DRUG": 7473722,
+      "REAC": 5843817
+    },
+    "2024": {
+      "DEMO": 1619665,
+      "DRUG": 7736495,
+      "REAC": 5794928
+    },
+    "2025": {
+      "DEMO": 1617444,
+      "DRUG": 7801018,
+      "REAC": 5657830
+    }
+  }
+}
