@@ -2,9 +2,10 @@
 
 This course project processes FDA Adverse Event Reporting System (FAERS)
 reports to study whether an annual reporting pattern for a tuple
-`(drug_a, drug_b, reaction_pt)` recurs in a future year. The intended data
-range is 2012-2025, and standardized drug identifiers are ChEMBL molecule IDs
-such as `CHEMBL25`.
+`(drug_a, drug_b, reaction_pt)` recurs in a future year. The study data
+range is 2013-2025 (2013 is the first complete calendar year in the FAERS
+format; 2012 Q1-Q3 are legacy AERS files and Q3 is partial), and standardized
+drug identifiers are ChEMBL molecule IDs such as `CHEMBL25`.
 
 ## Milestone status
 

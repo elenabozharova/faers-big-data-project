@@ -77,7 +77,7 @@ def add_duplicate(state: dict, metric: str, *series: pd.Series | None) -> None:
         if key in state[metric + "_seen"]: state[metric] += 1
         else: state[metric + "_seen"].add(key)
 
-def profile_table(source: Source, table: str, path: Path, chunk_size: int, limit: int | None) -> dict[str, Any]:
+def profile_table(source: Source, table: str, path: Path, chunk_size: int, limit: int | None, encoding: str = "utf-8") -> dict[str, Any]:
     row = blank(source, table, path, limit)
     counts = {m: 0 for m in METRICS}
     sets = {"primaryids": set(), "caseids": set(), "drugnames": set(), "pts": set(),
@@ -88,12 +88,12 @@ def profile_table(source: Source, table: str, path: Path, chunk_size: int, limit
         with zipfile.ZipFile(path) as zf:
             wanted = getattr(source, f"expected_inner_{table.lower()}")
             member = resolve_member(zf, wanted); info = zf.getinfo(member)
-            with zf.open(member) as stream: raw = [str(c) for c in pd.read_csv(stream, sep="$", dtype=str, nrows=0).columns]
+            with zf.open(member) as stream: raw = [str(c) for c in pd.read_csv(stream, sep="$", dtype=str, nrows=0, encoding=encoding).columns]
             cols = [normalized(c) for c in raw]
             if len(cols) != len(set(cols)): raise ValueError("columns collide after trim/lower normalization")
             remaining = limit
             with zf.open(member) as stream:
-                for chunk in pd.read_csv(stream, sep="$", dtype=str, chunksize=chunk_size, low_memory=False):
+                for chunk in pd.read_csv(stream, sep="$", dtype=str, chunksize=chunk_size, low_memory=False, encoding=encoding):
                     chunk.columns = cols
                     if remaining is not None:
                         chunk = chunk.iloc[:remaining]; remaining -= len(chunk)
@@ -139,6 +139,7 @@ def profile_table(source: Source, table: str, path: Path, chunk_size: int, limit
                     if remaining == 0: break
         absent = [c for c in EXPECTED[table] if c not in cols]
         warnings = [f"missing expected column: {c}" for c in absent]
+        if encoding != "utf-8": warnings.append(f"not valid UTF-8, decoded as {encoding}")
         row.update(inner_filename=member, zip_size_bytes=path.stat().st_size, inner_file_size_bytes=info.file_size,
                    row_count=state.get("row_count", 0), column_count=len(raw), raw_column_names=raw,
                    normalized_column_names=cols, schema_signature=signature(cols), missing_expected_columns=absent,
@@ -167,6 +168,11 @@ def profile_table(source: Source, table: str, path: Path, chunk_size: int, limit
         for metric in warning_metrics:
             if isinstance(row.get(metric), int) and row[metric] > 0: warnings.append(f"{metric}={row[metric]}")
         return row
+    except UnicodeDecodeError:
+        # Some pre-2020 quarters carry cp1252 bytes (e.g. 0xAD); same fallback as faers_utils.load_faers_table.
+        # Restart from scratch: chunks read before the bad byte were already counted.
+        if encoding == "utf-8": return profile_table(source, table, path, chunk_size, limit, "cp1252")
+        raise
     except (OSError, KeyError, ValueError, zipfile.BadZipFile, pd.errors.ParserError) as exc:
         row["error"] = str(exc); row["warnings"] = ["profile failed"]; return row
 

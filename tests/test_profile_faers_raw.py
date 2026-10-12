@@ -39,6 +39,9 @@ class ProfileTests(unittest.TestCase):
   self.assertEqual(r["missing_caseversion"],""); self.assertIn("caseversion",json.loads(r["missing_expected_columns"])); self.assertTrue(json.loads(r["warnings"]))
  def test_failure_continues_and_nonzero(self):
   self.write_zip(reac=None); self.assertEqual(p.main(self.args()),1); rows=self.rows(); self.assertEqual(len(rows),3); self.assertEqual([r["profile_status"] for r in rows],["profiled","profiled","failed"])
+ def test_cp1252_bytes_after_first_chunk_retry_without_double_counting(self):
+  self.write_zip(drug=DRUG.encode()+"1$10$Co\xadamoxiclav$$C$3\n".encode("cp1252")); self.assertEqual(p.main(self.args("--chunk-size","1")),0); drug=self.rows()[1]
+  self.assertEqual((drug["profile_status"],drug["row_count"]),("profiled","4")); self.assertIn("not valid UTF-8, decoded as cp1252",json.loads(drug["warnings"]))
  def test_sample_marked_and_separate_default(self):
   old=p.DEFAULT_OUT_DIR; p.DEFAULT_OUT_DIR=self.root/"default"
   try:
