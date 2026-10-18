@@ -41,4 +41,9 @@ Thumbs.db
 .claude/
 CLAUDE.local.md
 
+# Codex local instructions and session files
+.codex/
+AGENTS.md
+AGENTS.override.md
+
 reports/figures/paper/*.pdf
