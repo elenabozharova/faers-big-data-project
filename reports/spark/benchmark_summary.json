@@ -1,0 +1,96 @@
+{
+  "years": "2013-2025",
+  "output_rows": 256643925,
+  "a_repeats": 2,
+  "by_cores": [
+    {
+      "cores": 1,
+      "seconds": 4855.1,
+      "sd_seconds": 338.2,
+      "speedup": 1.0,
+      "efficiency": 1.0
+    },
+    {
+      "cores": 2,
+      "seconds": 3280.5,
+      "sd_seconds": 330.5,
+      "speedup": 1.48,
+      "efficiency": 0.74
+    },
+    {
+      "cores": 4,
+      "seconds": 1988.3,
+      "sd_seconds": 421.3,
+      "speedup": 2.442,
+      "efficiency": 0.61
+    },
+    {
+      "cores": 8,
+      "seconds": 1430.4,
+      "sd_seconds": 271.9,
+      "speedup": 3.394,
+      "efficiency": 0.424
+    },
+    {
+      "cores": 16,
+      "seconds": 1241.4,
+      "sd_seconds": 126.9,
+      "speedup": 3.911,
+      "efficiency": 0.244
+    },
+    {
+      "cores": 24,
+      "seconds": 1050.9,
+      "sd_seconds": 125.6,
+      "speedup": 4.62,
+      "efficiency": 0.192
+    }
+  ],
+  "serial_fraction_amdahl": 0.198,
+  "repeats": [
+    {
+      "cores": 1,
+      "mean_seconds": 635.2,
+      "sd_seconds": 6.6,
+      "n": 3
+    },
+    {
+      "cores": 2,
+      "mean_seconds": 435.8,
+      "sd_seconds": 3.2,
+      "n": 3
+    },
+    {
+      "cores": 4,
+      "mean_seconds": 282.1,
+      "sd_seconds": 0.8,
+      "n": 3
+    },
+    {
+      "cores": 8,
+      "mean_seconds": 174.1,
+      "sd_seconds": 0.8,
+      "n": 3
+    },
+    {
+      "cores": 16,
+      "mean_seconds": 137.4,
+      "sd_seconds": 1.8,
+      "n": 3
+    },
+    {
+      "cores": 24,
+      "mean_seconds": 126.1,
+      "sd_seconds": 1.0,
+      "n": 3
+    }
+  ],
+  "write_share": {
+    "1": 0.034,
+    "2": 0.031,
+    "4": 0.052,
+    "8": 0.121,
+    "16": 0.137,
+    "24": 0.255
+  }
+}

@@ -586,8 +586,8 @@
     "REAC.primaryid": "2013Q1",
     "REAC.pt": "2013Q1"
   },
-  "failed_tables": 1,
-  "generated_at_utc": "2026-10-12T18:02:07.467970Z",
+  "failed_tables": 0,
+  "generated_at_utc": "2026-10-13T19:53:09.514920Z",
   "is_sampled": false,
   "largest_tables": [
     {
@@ -645,10 +645,10 @@
       "year": 2018
     },
     {
-      "quarter": 1,
-      "row_count": 1943532,
+      "quarter": 3,
+      "row_count": 1982442,
       "table": "DRUG",
-      "year": 2020
+      "year": 2019
     }
   ],
   "max_rows_per_table": null,
@@ -1148,11 +1148,13 @@
       "year": 2019
     },
     {
-      "error": "'utf-8' codec can't decode byte 0xad in position 126098: invalid start byte",
+      "error": "",
       "quarter": 3,
       "table": "DRUG",
       "warnings": [
-        "profile failed"
+        "not valid UTF-8, decoded as cp1252",
+        "missing_drugname=125",
+        "missing_prod_ai=44233"
       ],
       "year": 2019
     },
@@ -1678,7 +1680,7 @@
     2024,
     2025
   ],
-  "runtime_seconds": 1330.346,
+  "runtime_seconds": 914.308,
   "schema_drift_events": [
     {
       "columns_added": [
@@ -1880,6 +1882,7 @@
           "2018Q4",
           "2019Q1",
           "2019Q2",
+          "2019Q3",
           "2019Q4",
           "2020Q1",
           "2020Q2",
@@ -2076,12 +2079,12 @@
     }
   ],
   "source_manifest": "config/faers_sources.csv",
-  "successful_tables": 155,
-  "tables_profiled": 155,
+  "successful_tables": 156,
+  "tables_profiled": 156,
   "tables_requested": 156,
   "total_rows_by_table": {
     "DEMO": 19478153,
-    "DRUG": 78518879,
+    "DRUG": 80501321,
     "REAC": 62796891
   },
   "total_rows_by_year": {
@@ -2091,7 +2094,7 @@
     "2016": 9837458,
     "2017": 10242008,
     "2018": 13737192,
-    "2019": 12530196,
+    "2019": 14512638,
     "2020": 15271645,
     "2021": 16331771,
     "2022": 15566876,
@@ -2132,7 +2135,7 @@
     },
     "2019": {
       "DEMO": 1727296,
-      "DRUG": 5226174,
+      "DRUG": 7208616,
       "REAC": 5576726
     },
     "2020": {

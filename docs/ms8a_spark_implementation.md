@@ -71,10 +71,35 @@ Machine and versions: [`reports/spark/environment.json`](../reports/spark/enviro
 About 7 GB of commit memory was free during the runs, so a 12g heap failed to
 allocate. Keep the heap at 6g on this machine, or close other applications.
 
-## Pending (MS8C)
+## MS8C scaling benchmark
 
-Scaling benchmark: `--cores` 1, 2, 4, 8, 16 and 24 over 2013-2025, plus three
-repeats of 2023 per core count. Report speedup, efficiency and runtime vs
-rows per year. Local pipeline reference timings are in
-`reports/data_quality/**/ms6_stage_performance_by_year.csv`; they include
-validation and intermediate artifact writes.
+```powershell
+.venv\Scripts\python.exe src\run_spark_benchmark.py --dry-run   # show the 42 configs
+.venv\Scripts\python.exe src\run_spark_benchmark.py             # about 3-4 h unattended
+.venv\Scripts\python.exe src\analyze_spark_benchmark.py         # tables + figures
+```
+
+| Phase | Configs | Output |
+|---|---|---|
+| A, scaling grid | 2013-2025 at `--cores` 1, 2, 4, 8, 16, 24 | `reports/spark/benchmark_scaling.csv` |
+| B, repeats | 2023 x 3 repeats per core count, alternating order | `reports/spark/benchmark_repeats.csv` |
+| C, compute only | same as B with `--noop` | `reports/spark/benchmark_noop.csv` |
+
+Every config runs in a fresh Spark session. The runner keeps Windows awake,
+continues past a failed config, and logs exit code, wall time and free memory
+per config to `reports/spark/benchmark_runs.csv`. Full logs go to
+`data/interim/spark/bench_logs/`. Close memory-heavy applications first;
+free memory affects timings.
+
+`analyze_spark_benchmark.py` produces:
+- `benchmark_summary.json`: speedup, efficiency, Amdahl serial fraction,
+  repeat mean ± SD, write share
+- `benchmark_by_year.csv`: local pipeline vs Spark at 1 core vs the best core
+  count, with join size per year
+- `fig_spark_speedup` and `fig_spark_runtime_by_year` in `reports/figures/paper/`
+
+Local pipeline reference timings come from
+`reports/data_quality/**/ms6_stage_performance_by_year.csv`. They include
+validation and intermediate artifact writes, so the local-vs-Spark ratio mixes
+engine, algorithm (distinct-value normalization) and I/O effects. The
+parallelism effect alone is Spark at 1 core vs Spark at N cores.

@@ -1,5 +1,6 @@
 """Paper figures from the Historical Baseline v1 reports (PNG 300 dpi + PDF)."""
 
+import json
 from pathlib import Path
 
 import matplotlib
@@ -82,7 +83,41 @@ def precision_recall_figure():
     save(fig, "fig_precision_recall_by_year")
 
 
+def data_volume_figure():
+    quality = ROOT / "reports" / "data_quality"
+    raw = json.loads((quality / "raw_profile_2013_2025" / "raw_schema_summary.json").read_text(encoding="utf-8"))
+    if raw["failed_tables"]:
+        raise ValueError("raw profile has failed tables; re-run profile_faers_raw.py first")
+    ms6 = pd.concat(pd.read_csv(path / "ms6_annual_pair_reaction_validation.csv")
+                    for path in (quality, quality / "historical_2013_2022"))
+    assert sorted(ms6["year"]) == list(range(2013, 2026))
+    features = json.loads((quality / "historical_2013_2022" / "ms7b_temporal_features_validation.json").read_text())
+    stages = [
+        ("Raw rows\n(DEMO + DRUG + REAC)", sum(raw["total_rows_by_table"].values())),
+        ("Case-drug rows\n(resolved, ChEMBL-mapped)", ms6["case_drug_rows"].sum()),
+        ("Case-pair rows", ms6["case_drug_pair_rows"].sum()),
+        ("Case-pair-reaction rows", ms6["case_pair_reaction_rows"].sum()),
+        ("Gold rows\n(year, pair, reaction, n_cases)", ms6["unique_pair_reaction_patterns"].sum()),
+        ("Feature rows\n(11 target-year partitions)", features["total_rows"]),
+    ]
+    labels, millions = zip(*[(label, rows / 1e6) for label, rows in stages])
+    fig, ax = plt.subplots(figsize=(6.0, 2.8), layout="constrained")
+    ax.set_axisbelow(True)
+    ax.barh(labels, millions, height=0.6, color=SERIES[0][0])
+    for y, value in enumerate(millions):
+        ax.annotate(f"{value:,.1f} M", (value, y), xytext=(3, 0), textcoords="offset points",
+                    va="center", fontsize=8, color=INK)
+    ax.invert_yaxis()
+    ax.grid(axis="y", visible=False)
+    ax.grid(axis="x", visible=True)
+    ax.set_xlim(0, max(millions) * 1.22)
+    ax.set_xlabel("Rows (millions), 2013-2025")
+    ax.tick_params(axis="y", length=0)
+    save(fig, "fig_data_volume_by_stage")
+
+
 if __name__ == "__main__":
     ablation_figure()
     precision_recall_figure()
+    data_volume_figure()
     print(f"Figures written to {OUT}")
