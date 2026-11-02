@@ -7,24 +7,6 @@ range is 2013-2025 (2013 is the first complete calendar year in the FAERS
 format; 2012 Q1-Q3 are legacy AERS files and Q3 is partial), and standardized
 drug identifiers are ChEMBL molecule IDs such as `CHEMBL25`.
 
-## Milestone status
-
-| Milestone | Status |
-|---|---|
-| MS1 | Complete |
-| MS2 | Complete: reproducible raw FAERS acquisition and provenance |
-| MS3 | Complete: raw schema and quality profiling |
-| MS4A | Complete and production-validated: global cross-year CASEID resolution, covering 2013-2025 |
-| MS4B | Complete and production-validated end to end for 2013-2025 |
-| MS5 | Complete and production-validated for 2023-2025 (untouched); additive versioned artifacts for 2013-2022 |
-| MS6 | Complete and production-validated for 2023-2025 (untouched); additive artifacts for 2013-2022 |
-| MS7A | Complete and production-validated for 2023-2025 (untouched); additive Gold partitions for 2013-2022, spanning 2013-2025 |
-| MS7B | Complete for the 2023-2025 pilot (untouched); full 2013-2025 rebuild for target years 2016-2025 |
-| MS7C | Complete and production-validated for the Stage 3 pilot; **Historical Baseline v1** reruns the same methodology across target years 2016-2025 with an M1/M2/M3 ablation -- see [Historical Baseline v1](docs/historical_baseline_v1.md) |
-| MS8A | Pending: PySpark pipeline implementation |
-| MS8B | Pending: Spark/local correctness and output parity |
-| MS8C | Pending: scaling benchmark and engine recommendation |
-
 ## Pipeline overview
 
 The active production path is:
